@@ -1,2 +1,5 @@
 .idea/
 target/
+
+# local environment configuration should not be committed.
+config/
