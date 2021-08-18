@@ -1,5 +1,6 @@
 = Silver Broccoli: Spring CLoud Stream + Apache Kafka Evaluation
 
+. [ ] Document how to connect to a RHOAS Kafka instance.
 . [ ] Auto configure a topic.
 . [ ] Generate messages into the topic on a schedule.
 . [ ] Enqueue a message in response to arbitrary external stimuli.
