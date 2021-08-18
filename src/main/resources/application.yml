@@ -1,0 +1,10 @@
+spring:
+  cloud:
+    stream:
+      bindings:
+        numberSupplier-out-0:
+          destination: numbers
+        printer-in-0:
+          destination: numbers
+    function:
+      definition: numberSupplier,printer
