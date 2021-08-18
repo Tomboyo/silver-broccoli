@@ -11,10 +11,10 @@
     </parent>
 
     <groupId>com.github.tomboyo</groupId>
-    <artifactId>cautious-train</artifactId>
+    <artifactId>silver-broccoli</artifactId>
     <version>0.0.1-SNAPSHOT</version>
-    <name>Cautious Train</name>
-    <description>Demo project using SCS + Kafka</description>
+    <name>Silver Broccoli Sandbox Project</name>
+    <description>Evaluation of SCS and RHOAS Apache Kafka</description>
 
     <properties>
         <java.version>11</java.version>
