@@ -6,5 +6,11 @@ spring:
           destination: numbers
         printer-in-0:
           destination: numbers
+      kafka:
+        binder:
+          brokers: ${env.kafka.bootstrapservers}
+          configuration:
+            security.protocol: ${env.kafka.securityprotocol}
+            sasl.mechanism: ${env.kafka.saslmechanism}
     function:
       definition: numberSupplier,printer
