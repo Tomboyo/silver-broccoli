@@ -49,7 +49,7 @@ public class SilverBroccoliApplication {
     module.setOptions(
         Map.of(
             "username",
-            env.getRequiredProperty("env.kafka.username"),
+            env.getRequiredProperty("env.kafka.user"),
             "password",
             env.getRequiredProperty("env.kafka.password")));
     return module;
