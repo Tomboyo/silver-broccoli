@@ -1,4 +1,4 @@
-= Silver Broccoli: Spring CLoud Stream + Apache Kafka Evaluation
+= Silver Broccoli: Spring Cloud Stream (SCS) + Apache Kafka Evaluation
 
 * [x] Document how to connect to a RHOAS Kafka instance.
 * [x] Auto configure a topic.
