@@ -1,14 +1,14 @@
 = Silver Broccoli: Spring CLoud Stream + Apache Kafka Evaluation
 
-. [x] Document how to connect to a RHOAS Kafka instance.
-. [ ] Auto configure a topic.
-. [ ] Generate messages into the topic on a schedule.
-. [ ] Enqueue a message in response to arbitrary external stimuli.
-. [ ] Enqueue a message as a consequence of processing another.
-. [ ] Consume messages from one topic concurrently.
-. [ ] Demonstrate re-tried message consumption.
-. [ ] Demonstrate bounded re-try so that unprocessable entities do not block the topic.
-. [ ] Enable DLQ for a topic.
+* [x] Document how to connect to a RHOAS Kafka instance.
+* [ ] Auto configure a topic.
+* [ ] Generate messages into the topic on a schedule.
+* [ ] Enqueue a message in response to arbitrary external stimuli.
+* [ ] Enqueue a message as a consequence of processing another.
+* [ ] Consume messages from one topic concurrently.
+* [ ] Demonstrate re-tried message consumption.
+* [ ] Demonstrate bounded re-try so that unprocessable entities do not block the topic.
+* [ ] Enable DLQ for a topic.
 
 == Development Setup
 
