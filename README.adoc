@@ -7,13 +7,17 @@
 * [x] Use a structured message type (A jackson-serialized POJO)
 * [x] Enqueue a message as a consequence of processing another.
 ** [ ] Produce multiple messages.
-* [ ] Consume messages from one topic concurrently.
+* [x] Consume messages from one topic concurrently.
 * [ ] Demonstrate re-tried message consumption.
 * [ ] Demonstrate bounded re-try so that unprocessable entities do not block the topic.
 * [ ] Create an idempotent message consumer
 * [ ] Enable DLQ for a topic.
 * [ ] Consume a batch of messages.
 * [ ] Prioritize message consumption within a topic.
+
+Additional questions:
+
+* [ ] What is the default message key used for partition selection?
 
 == Documentation Links
 
@@ -135,3 +139,50 @@ include::src/main/java/com/github/tomboyo/silverbroccoli/SilverBroccoliApplicati
 === Structured Messages
 
 Spring Cloud Stream supports structures messages. We simply use Jackson-annotated POJOs as message objects. For an example, see NumberMessage.java and SilverBroccoliApplication.java.
+
+=== Concurrent Message Consumers
+
+In SilverBroccoliApplication.java, we have configured a `debugConsumer` message handler to consume from and display metadata about the `number-structured` topic. The topic has three partitions, and we start two consumer instances. The resulting output looks like the following:
+
+----
+2021-08-20 17:29:48.144  INFO 53572 --- [container-0-C-1] c.g.t.s.SilverBroccoliApplication        :
+Partition=0
+Thread=KafkaConsumerDestination{consumerDestinationName='numbers-structured', partitions=3, dlqName='null'}.container-0-C-1
+ConsumerGroup=anonymous.f247e2f0-b12c-488e-9607-b940ef07d236
+Payload=NumberMessage{ number=12 }
+
+2021-08-20 17:29:49.145  INFO 53572 --- [container-0-C-1] c.g.t.s.SilverBroccoliApplication        :
+Partition=1
+Thread=KafkaConsumerDestination{consumerDestinationName='numbers-structured', partitions=3, dlqName='null'}.container-0-C-1
+ConsumerGroup=anonymous.f247e2f0-b12c-488e-9607-b940ef07d236
+Payload=NumberMessage{ number=13 }
+
+2021-08-20 17:29:50.137  INFO 53572 --- [container-1-C-1] c.g.t.s.SilverBroccoliApplication        :
+Partition=2
+Thread=KafkaConsumerDestination{consumerDestinationName='numbers-structured', partitions=3, dlqName='null'}.container-1-C-1
+ConsumerGroup=anonymous.f247e2f0-b12c-488e-9607-b940ef07d236
+Payload=NumberMessage{ number=14 }
+----
+
+Above we see that the application (running in one JVM) has consumed three messages from the `numbers-structured` topic. They were consumed from the 0th, 1st, and 2nd partitions of the topic respectively. The thread is printed with each message. Since we're using the Kafka binder, threads are one-to-one with consumers, so since we can see only two threads (0-C-1 and 1-C-1), we know there are only two consumers drawing from all three partitions. This is expected: When a smaller number of consumers than partitions is configured, Kafka will balance some consumers to draw from multiple partitions. Note, however, that at most one consumer from a single consumer group may consume from any partition.
+
+Concurrency configuration for Kafka is simple. The only required parameter is `consumer.concurrency`, which instructs S.C.S. to start multiple consumer instances and threads. By default, producers will distribute messages across partitions, though this can be customized with the partition selection and partition key families of configuration options (see link:https://docs.spring.io/spring-cloud-stream/docs/current/reference/html/spring-cloud-stream.html#spring-cloud-stream-overview-configuring-output-bindings-partitioning[the documentation]). The producer `partitionCount` is irrelevant to this process, but is used to provision _new_ topics with a desired number of partitions (ignore this if you are manually creating topics on your broker). The following is a complete configuration for concurrent consumers:
+
+[source,yml]
+----
+spring:
+  cloud:
+    stream:
+      bindings:
+        producer-out-0:
+          destination: topicname
+          # Used to privision new topics. Omit if topics are manually
+          # configured.
+          partitionCount: 3
+        consumer-in-0:
+          destination: topicname
+          consumer:
+            concurrency: 2
+    function:
+      definition: producer;consumer
+----

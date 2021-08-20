@@ -8,6 +8,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Profile;
 import org.springframework.core.env.Environment;
 import org.springframework.kafka.security.jaas.KafkaJaasLoginModuleInitializer;
+import org.springframework.kafka.support.KafkaHeaders;
+import org.springframework.messaging.Message;
 
 import java.io.IOException;
 import java.util.Map;
@@ -55,6 +57,20 @@ public class SilverBroccoliApplication {
     return it -> LOGGER.info("Consuming number: " + it);
   }
   // end::consume-message-with-consumer[]
+
+  @Bean
+  public Consumer<Message<NumberMessage>> debugConsumer() {
+    return message -> {
+      var headers = message.getHeaders();
+      var partition = headers.get(KafkaHeaders.RECEIVED_PARTITION_ID);
+      var consumerGroup = headers.get(KafkaHeaders.GROUP_ID);
+      var payload = message.getPayload();
+      LOGGER.info(
+          String.format(
+              "%nPartition=%s%nThread=%s%nConsumerGroup=%s%nPayload=%s",
+              partition, Thread.currentThread().getName(), consumerGroup, payload));
+    };
+  }
 
   @Bean
   @Profile("sasl")
