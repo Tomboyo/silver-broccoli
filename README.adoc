@@ -10,6 +10,13 @@
 * [ ] Demonstrate bounded re-try so that unprocessable entities do not block the topic.
 * [ ] Enable DLQ for a topic.
 
+== Documentation Links
+
+Refer to the following:
+
+* link:https://docs.spring.io/spring-cloud-stream/docs/current/reference/html/spring-cloud-stream.html#spring-cloud-stream-reference[Spring Cloud Stream]
+* link:https://cloud.spring.io/spring-cloud-stream-binder-kafka/spring-cloud-stream-binder-kafka.html#_apache_kafka_binder[Apache Kafka Binder for Spring Cloud Stream]
+
 == Development Setup
 
 For local development you may either perform integrated testing in a docker-compose environment or with an externally deployed Kafka instance using the `sasl` profile.
