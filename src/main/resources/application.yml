@@ -2,15 +2,13 @@ spring:
   cloud:
     stream:
       bindings:
-        numberSupplier-out-0:
+        producer-out-0:
           destination: numbers
-        printer-in-0:
+        consumer-in-0:
           destination: numbers
       kafka:
         binder:
           brokers: ${env.kafka.bootstrapservers}
-          configuration:
-            security.protocol: ${env.kafka.securityprotocol}
-            sasl.mechanism: ${env.kafka.saslmechanism}
     function:
-      definition: numberSupplier,printer
+      # Separate function names with a _semicolon_.
+      definition: producer;consumer

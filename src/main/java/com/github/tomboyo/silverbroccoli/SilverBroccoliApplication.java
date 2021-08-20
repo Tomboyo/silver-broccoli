@@ -27,17 +27,18 @@ public class SilverBroccoliApplication {
   }
 
   @Bean
-  public Supplier<String> numberSupplier() {
+  public Supplier<String> producer() {
     var counter = new AtomicInteger();
     return () -> {
       var n = counter.getAndIncrement();
+      LOGGER.info("Producing number: " + n);
       return String.valueOf(n);
     };
   }
 
   @Bean
-  public Consumer<String> printer() {
-    return it -> LOGGER.info("printer - " + it);
+  public Consumer<String> consumer() {
+    return it -> LOGGER.info("Consuming number: " + it);
   }
 
   @Bean

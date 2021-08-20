@@ -1,0 +1,8 @@
+spring:
+  cloud:
+    stream:
+      kafka:
+        binder:
+          configuration:
+            security.protocol: ${env.kafka.securityprotocol}
+            sasl.mechanism: ${env.kafka.saslmechanism}
