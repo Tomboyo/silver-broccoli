@@ -1,6 +1,6 @@
 = Silver Broccoli: Spring CLoud Stream + Apache Kafka Evaluation
 
-. [ ] Document how to connect to a RHOAS Kafka instance.
+. [x] Document how to connect to a RHOAS Kafka instance.
 . [ ] Auto configure a topic.
 . [ ] Generate messages into the topic on a schedule.
 . [ ] Enqueue a message in response to arbitrary external stimuli.
@@ -9,3 +9,41 @@
 . [ ] Demonstrate re-tried message consumption.
 . [ ] Demonstrate bounded re-try so that unprocessable entities do not block the topic.
 . [ ] Enable DLQ for a topic.
+
+== Development Setup
+
+For local development you may either perform integrated testing in a docker-compose environment or with an externally deployed Kafka instance using the `sasl` profile.
+
+=== Docker Compose
+In this section we will launch our application on a private docker network along with zookeeper and kafka instances already completely configured.
+
+To build and launch the application with docker-compose, run the following commands:
+
+```
+./mvnw package && docker-compose build && docker-compose up
+```
+
+=== External Kafka Integration (With SASL Authentication)
+In this section we will run the application from maven and integrate with an external kafka instance using SSL-encrypted SASL/PLAIN (username and password) authentication. We will inject SASL configuration into the application environment using an untracked application profile, but we could also set environment variables with the same names.
+
+To begin, create a `config/application-local.yml` file. This file will hold local environemnt configuration and secreats which we do not want to commit to the repository, and as such is already git-ignored. Add the following required fields:
+
+```
+env:
+  kafka:
+    bootstrapservers: <broker connection string, e.g. hostname:port>
+    securityprotocol: SASL_SSL
+    saslmechanism: PLAIN
+    user: <service account user name>
+    password: <service account password>
+```
+
+Now we launch the application with both the `sasl` and `local` profiles enabled. The `local` profile will simply read the application-local.yml file. The `sasl` profile maps those configurations to appropriate Kafka and SASL configurations.
+
+NOTE: If we did not want to use an `application-local.yml` file, we could set environment properties of corresponding names (e.g. `env.kafka.bootstrapservers=localhost:1234`). In this case, we would not need to set the `local` profile.
+
+To launch the application, invoke the following command:
+
+```
+SPRING_PROFILES_ACTIVE=local,sasl ./mvnw spring-boot:run
+```
