@@ -42,7 +42,7 @@ public class SilverBroccoliApplication {
   }
 
   @Bean
-  @Profile("openshift")
+  @Profile("sasl")
   public KafkaJaasLoginModuleInitializer jaasConfig(Environment env) throws IOException {
     var module = new KafkaJaasLoginModuleInitializer();
     module.setLoginModule("org.apache.kafka.common.security.plain.PlainLoginModule");
