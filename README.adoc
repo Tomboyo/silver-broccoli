@@ -3,7 +3,7 @@
 * [x] Document how to connect to a RHOAS Kafka instance.
 * [x] Auto configure a topic.
 * [x] Generate messages into the topic on a schedule.
-* [ ] Enqueue a message in response to arbitrary external stimuli.
+* [x] Enqueue a message in response to arbitrary external stimuli.
 * [ ] Enqueue a message as a consequence of processing another.
 * [ ] Consume messages from one topic concurrently.
 * [ ] Demonstrate re-tried message consumption.
@@ -97,9 +97,16 @@ Kafka-specific property configuration may be found link:https://kafka.apache.org
 
 === Generate Messages
 
-To generate messages on a short fixed schedule (say, once a second), we can either configure a `Supplier<Flux<T>>` bean or just a `Supplier<T>` bean. The former must manually control the production rate, whereas the latter relies on S.C.S's global polling schedule (see link:https://docs.spring.io/spring-cloud-stream/docs/current/reference/html/spring-cloud-stream.html#_polling_configuration_properties[polling configuration]):
+To generate messages on a short fixed schedule (say, once a second), we can either configure a `Supplier<Flux<T>>` bean or just a `Supplier<T>` bean. The former must manually control the production rate, whereas the latter relies on S.C.S's global polling schedule (see link:https://docs.spring.io/spring-cloud-stream/docs/current/reference/html/spring-cloud-stream.html#_polling_configuration_properties[polling configuration]). This application registers a `Supplier` to emit numbers to a topic. Find the relevant code in SilverBroccoliApplication.java below.
 
 [source,java]
 ----
 include::src/main/java/com/github/tomboyo/silverbroccoli/SilverBroccoliApplication.java[tag=generate-message-with-supplier]
+----
+
+To generate messages in response to arbitrary external events, we use an instance of  link:https://docs.spring.io/spring-cloud-stream/docs/current/reference/html/spring-cloud-stream.html#_sending_arbitrary_data_to_an_output_e_g_foreign_event_driven_sources[StreamBridge]. StreamBridge allows us to enqueue messages one at a time to an arbitrary spring binding, which maps the message to a Kafka topic. This application serves a REST API (`POST /number`) which uses StreamBridge to enqueue a message in response to HTTP requests. Find the relevant code in NumberRestController.java below.
+
+[source,java]
+----
+include::src/main/java/com/github/tomboyo/silverbroccoli/NumberRestController.java[tag=generate-message-with-streambridge]
 ----

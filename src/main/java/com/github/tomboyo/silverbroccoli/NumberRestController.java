@@ -37,6 +37,7 @@ public class NumberRestController {
     this.bridge = bridge;
   }
 
+  // tag::generate-message-with-streambridge[]
   @PostMapping("/")
   public ResponseEntity<Void> enqueue(@RequestBody EnqueueBody body) {
     // This is re-using an existing producer binding.
@@ -44,4 +45,5 @@ public class NumberRestController {
     LOGGER.info("Enqueued in response to REST API request: n=" + body.n);
     return ResponseEntity.ok().build();
   }
+  // end::generate-message-with-streambridge[]
 }
