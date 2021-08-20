@@ -1,7 +1,7 @@
 = Silver Broccoli: Spring CLoud Stream + Apache Kafka Evaluation
 
 * [x] Document how to connect to a RHOAS Kafka instance.
-* [ ] Auto configure a topic.
+* [x] Auto configure a topic.
 * [ ] Generate messages into the topic on a schedule.
 * [ ] Enqueue a message in response to arbitrary external stimuli.
 * [ ] Enqueue a message as a consequence of processing another.
@@ -16,6 +16,7 @@ Refer to the following:
 
 * link:https://docs.spring.io/spring-cloud-stream/docs/current/reference/html/spring-cloud-stream.html#spring-cloud-stream-reference[Spring Cloud Stream]
 * link:https://cloud.spring.io/spring-cloud-stream-binder-kafka/spring-cloud-stream-binder-kafka.html#_apache_kafka_binder[Apache Kafka Binder for Spring Cloud Stream]
+* link:https://kafka.apache.org/documentation/#configuration[Kafka configuration properties] (see topic and producer configs).
 
 == Development Setup
 
@@ -26,16 +27,18 @@ In this section we will launch our application on a private docker network along
 
 To build and launch the application with docker-compose, run the following commands:
 
-```
+[source,sh]
+----
 ./mvnw package && docker-compose build && docker-compose up
-```
+----
 
 === External Kafka Integration (With SASL Authentication)
 In this section we will run the application from maven and integrate with an external kafka instance using SSL-encrypted SASL/PLAIN (username and password) authentication. We will inject SASL configuration into the application environment using an untracked application profile, but we could also set environment variables with the same names.
 
 To begin, create a `config/application-local.yml` file. This file will hold local environemnt configuration and secreats which we do not want to commit to the repository, and as such is already git-ignored. Add the following required fields:
 
-```
+[source,yml]
+----
 env:
   kafka:
     bootstrapservers: <broker connection string, e.g. hostname:port>
@@ -43,7 +46,7 @@ env:
     saslmechanism: PLAIN
     user: <service account user name>
     password: <service account password>
-```
+----
 
 Now we launch the application with both the `sasl` and `local` profiles enabled. The `local` profile will simply read the application-local.yml file. The `sasl` profile maps those configurations to appropriate Kafka and SASL configurations.
 
@@ -51,6 +54,43 @@ NOTE: If we did not want to use an `application-local.yml` file, we could set en
 
 To launch the application, invoke the following command:
 
-```
+[source,sh]
+----
 SPRING_PROFILES_ACTIVE=local,sasl ./mvnw spring-boot:run
-```
+----
+
+== Evaluation Notes
+
+=== Topic Confgiuration
+
+We can manually set up topics on an external broker, or we can automatically provision them when the application starts. The latter is controlled by binding configurations like the following:
+
+[source,yml]
+----
+spring:
+  cloud:
+    stream:
+      bindings:
+        producer-out-0:
+          destination: numbers
+          producer:
+            # Provision new topics with 3 partitions. This configuration only
+            # applies to producer bindings like this one.
+            partitionCount: 3
+      # Some producer configurations only apply to kafka, so they are are under
+      # the s.c.s.kafka namespace.
+      kafka:
+        bindings:
+          producer-out-0:
+            producer:
+              # Everything under this key is a native kafka configuration. See
+              # below for a link to kafka.apache.org documentation. Do not
+              # accidentally substitute colons for periods in these keys!
+              topic.properties:
+                # Retain only 10,000 bytes. The default is unlimited (-1).
+                retention.bytes: 10000
+                # Retain messages for 2 days. The default is 7. -1 is unlimited.
+                retention.ms: 172800000
+----
+
+Kafka-specific property configuration may be found link:https://kafka.apache.org/documentation/#topicconfigs[here]. Note that new partitions can be added to existing topics, but is disabled by default (see kafka binder documentation for spring.cloud.stream.kafka.binder.autoAddPartitions).
