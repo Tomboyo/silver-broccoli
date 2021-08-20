@@ -26,6 +26,7 @@ public class SilverBroccoliApplication {
     SpringApplication.run(SilverBroccoliApplication.class, args);
   }
 
+  // tag::generate-message-with-supplier[]
   @Bean
   public Supplier<String> producer() {
     var counter = new AtomicInteger();
@@ -35,6 +36,7 @@ public class SilverBroccoliApplication {
       return String.valueOf(n);
     };
   }
+  // end::generate-message-with-supplier[]
 
   @Bean
   public Consumer<String> consumer() {

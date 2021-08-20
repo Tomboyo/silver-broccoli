@@ -2,7 +2,7 @@
 
 * [x] Document how to connect to a RHOAS Kafka instance.
 * [x] Auto configure a topic.
-* [ ] Generate messages into the topic on a schedule.
+* [x] Generate messages into the topic on a schedule.
 * [ ] Enqueue a message in response to arbitrary external stimuli.
 * [ ] Enqueue a message as a consequence of processing another.
 * [ ] Consume messages from one topic concurrently.
@@ -61,7 +61,7 @@ SPRING_PROFILES_ACTIVE=local,sasl ./mvnw spring-boot:run
 
 == Evaluation Notes
 
-=== Topic Confgiuration
+=== Topic Configuration
 
 We can manually set up topics on an external broker, or we can automatically provision them when the application starts. The latter is controlled by binding configurations like the following:
 
@@ -94,3 +94,12 @@ spring:
 ----
 
 Kafka-specific property configuration may be found link:https://kafka.apache.org/documentation/#topicconfigs[here]. Note that new partitions can be added to existing topics, but is disabled by default (see kafka binder documentation for spring.cloud.stream.kafka.binder.autoAddPartitions).
+
+=== Generate Messages
+
+To generate messages on a short fixed schedule (say, once a second), we can either configure a `Supplier<Flux<T>>` bean or just a `Supplier<T>` bean. The former must manually control the production rate, whereas the latter relies on S.C.S's global polling schedule (see link:https://docs.spring.io/spring-cloud-stream/docs/current/reference/html/spring-cloud-stream.html#_polling_configuration_properties[polling configuration]):
+
+[source,java]
+----
+include::src/main/java/com/github/tomboyo/silverbroccoli/SilverBroccoliApplication.java[tag=generate-message-with-supplier]
+----
