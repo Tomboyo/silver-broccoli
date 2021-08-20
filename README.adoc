@@ -6,10 +6,14 @@
 * [x] Enqueue a message in response to arbitrary external stimuli.
 * [x] Use a structured message type (A jackson-serialized POJO)
 * [x] Enqueue a message as a consequence of processing another.
+** [ ] Produce multiple messages.
 * [ ] Consume messages from one topic concurrently.
 * [ ] Demonstrate re-tried message consumption.
 * [ ] Demonstrate bounded re-try so that unprocessable entities do not block the topic.
+* [ ] Create an idempotent message consumer
 * [ ] Enable DLQ for a topic.
+* [ ] Consume a batch of messages.
+* [ ] Prioritize message consumption within a topic.
 
 == Documentation Links
 
