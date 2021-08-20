@@ -4,7 +4,8 @@
 * [x] Auto configure a topic.
 * [x] Generate messages into the topic on a schedule.
 * [x] Enqueue a message in response to arbitrary external stimuli.
-* [ ] Enqueue a message as a consequence of processing another.
+* [x] Use a structured message type (A jackson-serialized POJO)
+* [x] Enqueue a message as a consequence of processing another.
 * [ ] Consume messages from one topic concurrently.
 * [ ] Demonstrate re-tried message consumption.
 * [ ] Demonstrate bounded re-try so that unprocessable entities do not block the topic.
@@ -95,7 +96,9 @@ spring:
 
 Kafka-specific property configuration may be found link:https://kafka.apache.org/documentation/#topicconfigs[here]. Note that new partitions can be added to existing topics, but is disabled by default (see kafka binder documentation for spring.cloud.stream.kafka.binder.autoAddPartitions).
 
-=== Generate Messages
+=== Generate And Consume Messages
+
+In this section we produce, transform, and consume messages using the native java functional types `Supplier`, `Function`, and `Consumer`. We will look at the more nuanced Reactor types `Flux` and `Mono` in a separate section.
 
 To generate messages on a short fixed schedule (say, once a second), we can either configure a `Supplier<Flux<T>>` bean or just a `Supplier<T>` bean. The former must manually control the production rate, whereas the latter relies on S.C.S's global polling schedule (see link:https://docs.spring.io/spring-cloud-stream/docs/current/reference/html/spring-cloud-stream.html#_polling_configuration_properties[polling configuration]). This application registers a `Supplier` to emit numbers to a topic. Find the relevant code in SilverBroccoliApplication.java below.
 
@@ -110,3 +113,21 @@ To generate messages in response to arbitrary external events, we use an instanc
 ----
 include::src/main/java/com/github/tomboyo/silverbroccoli/NumberRestController.java[tag=generate-message-with-streambridge]
 ----
+
+To consume a message, we register an instance of `Consumer<IN>`. Find the relevant code in SilverBroccoliApplication.java below.
+
+[source,java]
+----
+include::src/main/java/com/github/tomboyo/silverbroccoli/SilverBroccoliApplication.java[tag=consume-message-with-consumer]
+----
+
+To process one message and generate another as a result (that is, transform a message), we register an instance of `Function<IN, OUT>`. This is very similar to how we register producers and consumers. Find the relevant code in SilverBroccoliApplication.java below.
+
+[source,java]
+----
+include::src/main/java/com/github/tomboyo/silverbroccoli/SilverBroccoliApplication.java[tag=transform-message-with-function]
+----
+
+=== Structured Messages
+
+Spring Cloud Stream supports structures messages. We simply use Jackson-annotated POJOs as message objects. For an example, see NumberMessage.java and SilverBroccoliApplication.java.

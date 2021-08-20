@@ -3,12 +3,18 @@ spring:
     stream:
       bindings:
         producer-out-0:
-          destination: numbers
+          destination: numbers-raw
           producer:
             # Provision new topics with 3 partitions.
             partitionCount: 3
+        transformer-in-0:
+          destination: numbers-raw
+        transformer-out-0:
+          destination: numbers-structured
+          producer:
+            partitionCount: 3
         consumer-in-0:
-          destination: numbers
+          destination: numbers-structured
       kafka:
         bindings:
           producer-out-0:
@@ -22,4 +28,4 @@ spring:
           brokers: ${env.kafka.bootstrapservers}
     function:
       # Separate function names with a _semicolon_.
-      definition: producer;consumer
+      definition: producer;transformer;consumer
