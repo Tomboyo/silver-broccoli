@@ -32,19 +32,26 @@ Refer to the following:
 For local development you may either perform integrated testing in a docker-compose environment or with an externally deployed Kafka instance using the `sasl` profile.
 
 === Docker Compose
-In this section we will launch our application on a private docker network along with zookeeper and kafka instances already completely configured.
+In this section we will launch and integrate with a local instance of Kafka using docker-compose.
 
-To build and launch the application with docker-compose, run the following commands:
+In one terminal, start Kafka and Zookeeper using docker-compose:
 
 [source,sh]
 ----
-./mvnw package && docker-compose build && docker-compose up
+docker-compose up
+----
+
+In another terminal, launch the application with desired profiles:
+
+[source,sh]
+----
+SPRING_PROFILES_ACTIVE=numbers ./mvnw spring-boot:run
 ----
 
 === External Kafka Integration (With SASL Authentication)
 In this section we will run the application from maven and integrate with an external kafka instance using SSL-encrypted SASL/PLAIN (username and password) authentication. We will inject SASL configuration into the application environment using an untracked application profile, but we could also set environment variables with the same names.
 
-To begin, create a `config/application-local.yml` file. This file will hold local environemnt configuration and secreats which we do not want to commit to the repository, and as such is already git-ignored. Add the following required fields:
+To begin, create a `config/application-local.yml` file. This file will hold custom environment configuration and secrets which we do not want to commit to the repository. This file is already git-ignored. Add the following required fields:
 
 [source,yml]
 ----
@@ -57,7 +64,7 @@ env:
     password: <service account password>
 ----
 
-Now we launch the application with both the `sasl` and `local` profiles enabled. The `local` profile will simply read the application-local.yml file. The `sasl` profile maps those configurations to appropriate Kafka and SASL configurations.
+Now launch the application with both the `sasl` and `local` profiles enabled. The `local` profile will simply read the application-local.yml file. The `sasl` profile maps those configurations to appropriate Kafka and SASL configurations.
 
 NOTE: If we did not want to use an `application-local.yml` file, we could set environment properties of corresponding names (e.g. `env.kafka.bootstrapservers=localhost:1234`). In this case, we would not need to set the `local` profile.
 
@@ -112,7 +119,7 @@ To generate messages on a short fixed schedule (say, once a second), we can eith
 
 [source,java]
 ----
-include::src/main/java/com/github/tomboyo/silverbroccoli/SilverBroccoliApplication.java[tag=generate-message-with-supplier]
+include::src/main/java/com/github/tomboyo/silverbroccoli/NumberHandlers.java[tag=generate-message-with-supplier]
 ----
 
 To generate messages in response to arbitrary external events, we use an instance of  link:https://docs.spring.io/spring-cloud-stream/docs/current/reference/html/spring-cloud-stream.html#_sending_arbitrary_data_to_an_output_e_g_foreign_event_driven_sources[StreamBridge]. StreamBridge allows us to enqueue messages one at a time to an arbitrary spring binding, which maps the message to a Kafka topic. This application serves a REST API (`POST /number`) which uses StreamBridge to enqueue a message in response to HTTP requests. Find the relevant code in NumberRestController.java below.
@@ -126,23 +133,23 @@ To consume a message, we register an instance of `Consumer<IN>`. Find the releva
 
 [source,java]
 ----
-include::src/main/java/com/github/tomboyo/silverbroccoli/SilverBroccoliApplication.java[tag=consume-message-with-consumer]
+include::src/main/java/com/github/tomboyo/silverbroccoli/NumberHandlers.java[tag=consume-message-with-consumer]
 ----
 
 To process one message and generate another as a result (that is, transform a message), we register an instance of `Function<IN, OUT>`. This is very similar to how we register producers and consumers. Find the relevant code in SilverBroccoliApplication.java below.
 
 [source,java]
 ----
-include::src/main/java/com/github/tomboyo/silverbroccoli/SilverBroccoliApplication.java[tag=transform-message-with-function]
+include::src/main/java/com/github/tomboyo/silverbroccoli/NumberHandlers.java[tag=transform-message-with-function]
 ----
 
 === Structured Messages
 
-Spring Cloud Stream supports structures messages. We simply use Jackson-annotated POJOs as message objects. For an example, see NumberMessage.java and SilverBroccoliApplication.java.
+Spring Cloud Stream supports structures messages. We simply use Jackson-annotated POJOs as message objects. For an example, see NumberMessage.java and NumberHandlers.java.
 
 === Concurrent Message Consumers
 
-In SilverBroccoliApplication.java, we have configured a `debugConsumer` message handler to consume from and display metadata about the `number-structured` topic. The topic has three partitions, and we start two consumer instances. The resulting output looks like the following:
+In NumberHandlers.java, we have configured a `debugConsumer` message handler to consume from and display metadata about the `number-structured` topic. The topic has three partitions, and we start two consumer instances. The resulting output looks like the following:
 
 ----
 2021-08-20 17:29:48.144  INFO 53572 --- [container-0-C-1] c.g.t.s.SilverBroccoliApplication        :
@@ -164,7 +171,7 @@ ConsumerGroup=anonymous.f247e2f0-b12c-488e-9607-b940ef07d236
 Payload=NumberMessage{ number=14 }
 ----
 
-Above we see that the application (running in one JVM) has consumed three messages from the `numbers-structured` topic. They were consumed from the 0th, 1st, and 2nd partitions of the topic respectively. The thread is printed with each message. Since we're using the Kafka binder, threads are one-to-one with consumers, so since we can see only two threads (0-C-1 and 1-C-1), we know there are only two consumers drawing from all three partitions. This is expected: When a smaller number of consumers than partitions is configured, Kafka will balance some consumers to draw from multiple partitions. Note, however, that at most one consumer from a single consumer group may consume from any partition.
+Above we see that the application (running in one JVM) has consumed three messages from the `numbers-structured` topic. They were consumed from the 0th, 1st, and 2nd partitions of the topic respectively. The thread is printed with each message. Since we're using the Kafka binder, threads are one-to-one with consumers. Since we can see only two threads (0-C-1 and 1-C-1), we know there are only two consumers drawing from all three partitions. This is expected: When a smaller number of consumers than partitions is configured, Kafka will balance some consumers to draw from multiple partitions. Note, however, that at most one consumer from a single consumer group may consume from any partition.
 
 Concurrency configuration for Kafka is simple. The only required parameter is `consumer.concurrency`, which instructs S.C.S. to start multiple consumer instances and threads. By default, producers will distribute messages across partitions, though this can be customized with the partition selection and partition key families of configuration options (see link:https://docs.spring.io/spring-cloud-stream/docs/current/reference/html/spring-cloud-stream.html#spring-cloud-stream-overview-configuring-output-bindings-partitioning[the documentation]). The producer `partitionCount` is irrelevant to this process, but is used to provision _new_ topics with a desired number of partitions (ignore this if you are manually creating topics on your broker). The following is a complete configuration for concurrent consumers:
 
