@@ -1,0 +1,41 @@
+server:
+  port: 8081
+spring:
+  cloud:
+    stream:
+      bindings:
+        producer-out-0:
+          destination: numbers-raw
+          producer:
+            # Provision new topics with 3 partitions.
+            partitionCount: 3
+        transformer-in-0:
+          destination: numbers-raw
+        transformer-out-0:
+          destination: numbers-structured
+          producer:
+            partitionCount: 3
+        # The following two consumers are implicitly in different groups, so
+        # they do not compete for messages. In other words, they both get a
+        # copy of every message.
+        consumer-in-0:
+          destination: numbers-structured
+        debugConsumer-in-0:
+          destination: numbers-structured
+          # We set to concurrency to slightly less than partitions so we can see
+          # how consumers are one-to-one with threads and how consumers can
+          # subscribe to multiple partitions.
+          consumer:
+            concurrency: 2
+      kafka:
+        bindings:
+          producer-out-0:
+            producer:
+              topic.properties:
+                # Retain only 10,000 bytes. The default is unlimited (-1).
+                retention.bytes: 10000
+                # Retain messages for 2 days. The default is 7. -1 is unlimited.
+                retention.ms: 172800000
+    function:
+      # Separate function names with a _semicolon_.
+      definition: producer;transformer;consumer;debugConsumer

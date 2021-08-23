@@ -8,21 +8,25 @@
 * [x] Enqueue a message as a consequence of processing another.
 ** [ ] Produce multiple messages.
 * [x] Consume messages from one topic concurrently.
-* [ ] Demonstrate re-tried message consumption.
-* [ ] Demonstrate bounded re-try so that unprocessable entities do not block the topic.
+* [x] Demonstrate re-tried message consumption.
+* [x] Demonstrate bounded re-try so that unprocessable entities do not block the topic.
 * [ ] Create an idempotent message consumer
-* [ ] Enable DLQ for a topic.
+* [x] Enable DLQ for a topic.
+**  [x] Demonstrate how to consume from a DLQ.
+**  [ ] Find or build a simple CLI to inspect DLQ entries.
 * [ ] Consume a batch of messages.
 * [ ] Prioritize message consumption within a topic.
 
 Additional questions:
 
 * [ ] What is the default message key used for partition selection?
+* [ ] How do you change the default encoding of DLQ entries? The default is byte-arrays for values.
 
 == Documentation Links
 
 Refer to the following:
 
+* link:https://github.com/spring-cloud/spring-cloud-stream-samples[Sample S.C.S. projects].
 * link:https://docs.spring.io/spring-cloud-stream/docs/current/reference/html/spring-cloud-stream.html#spring-cloud-stream-reference[Spring Cloud Stream]
 * link:https://cloud.spring.io/spring-cloud-stream-binder-kafka/spring-cloud-stream-binder-kafka.html#_apache_kafka_binder[Apache Kafka Binder for Spring Cloud Stream]
 * link:https://kafka.apache.org/documentation/#configuration[Kafka configuration properties] (see topic and producer configs).
@@ -100,8 +104,7 @@ spring:
           producer-out-0:
             producer:
               # Everything under this key is a native kafka configuration. See
-              # below for a link to kafka.apache.org documentation. Do not
-              # accidentally substitute colons for periods in these keys!
+              # below for a link to kafka.apache.org documentation.
               topic.properties:
                 # Retain only 10,000 bytes. The default is unlimited (-1).
                 retention.bytes: 10000
@@ -193,3 +196,53 @@ spring:
     function:
       definition: producer;consumer
 ----
+
+=== Fault Tolerance
+
+==== Redelivery
+
+In the event of broker failure or application disconnect, recovery falls back on Kafka consumer offsets, which we will summarize based on <<Kafka, [1, pp. 97-99]>> in this paragraph. Message consumers do not ACK each individual message like is typical for JMS. Instead, consumers have an _offset_ for each partition which tracks the index of the last retrieved message. Consumers periodically _commit_ their current offsets for their partitions to the broker, which saves them persistently. At any time, a consumer's offset may be behind or ahead of the offset of their last successfully _processed_ message, depending on the commit strategy. After a crash or rebalance (the assignment of partitions to consumers which happens as consumers connect and disconnect), consumers retrieve offsets for their partitions from the broker, then start consuming messages. If the last committed offset is _behind_ the most recently retrieved message for a partition (that is, a consumer received some messages but had not yet committed an updated offset prior to a crash), then the broker will re-deliver some messages (the already-delivered message will be delivered again). If the last committed offset was _ahead_ of their last retrieved message (that is, the consumer committed an offset before retrieving messages up to that offset, then crashed), then those messages will never be delivered.
+
+S.C.S. handles offset commits on our behalf. By default, S.C.S. commits offsets after the current batch of retrieved messages is processed. This is governed by the `autoCommitOffset` and `ackEachRecord` parameters. The `autoCommitOffset` defaults to `true`, instructing the framework to commit offsets after messages are processed. The `ackEachRecord` parameter defaults to `false`, instructing S.C.S. to commit offsets only after each _batch_ of messages has been processed rather than after each individual message. See link:https://cloud.spring.io/spring-cloud-stream-binder-kafka/spring-cloud-stream-binder-kafka.html#kafka-consumer-properties[Kafka consumer properties documentation for the Kafka binder] for more information.
+
+NOTE: S.C.S. does not change the fact that duplicate message delivery is possible in the event of broker or application failure.
+
+==== Retry
+
+Message processing failures are handled at multiple levels. Consumer-level error handlers re-process a message multiple times, blocking the consumer thread, until a configured maximum number of attempts (if any). Once the consumer-level error handler is exhausted, the error propagates to the binder-level error handler. The binder-level error handler may re-deliver the failed message to the consumer some configurable number of times. Every time a message is redelivered by the binder-level error handler, the consumer-level error handler takes effect. If and when the binder is exhausted, the messaging system uses a configurable strategy to dispose of the unprocessable message.
+
+By default, the Kafka binder error handler is the link:https://docs.spring.io/spring-kafka/docs/2.5.1.RELEASE/reference/html/#seek-to-current[Seek-to-current] error handler. This handler commits a new consumer offset whenever error are encountered so that the new offset points to the first erroneous message. This ensures that successfully processed messages are not re-delivered and re-processed. Failed messages, however, are retried immediately up to a maximum of ten times by default. The consumer-level error handler is a Retry Template with a maximum of 3 attempts including the first and a minimum delay of 1 second between each, a maximum delay of 10, and a back-off multiplier of 2.0 between each attempt. Finally, the default messaging-system-level error handler discards unprocessable entities.
+
+Therefore, by default, every unprocessable entity may be delivered 3 times at the consumer level and ten times at the binder level for a maximum of 30 times. Since there is a 1s delay until the first re-delivery and a 2s delay to the next, each message takes approximately 3s, and so the whole process will tie a consumer down for around 90s, plus processing overhead, in the worst-case. Such a message is then "discarded" by the broker, which means (_to the best of my understanding_) that the consumer treats the message like a success and commits an offset beyond the erroneous message.
+
+We have configured an "error prone" supplier and consumer processing chain which can be run with the `error-prone-numbers` profile. The configuration is located in the `application-error-prone-numbers.yml` file:
+
+[source,yml]
+----
+include::src/main/resources/application-error-prone-numbers.yml[]
+----
+
+At the consumer level, we set `maxAttempts: 3` so that the consumer-level error handler will attempt to process any message at most 3 times before sending the error up to the binder. Since we have configured the consumer (under the kafka-specific settings) to use a dead-letter queue, the default seek-to-current error handler skips redelivery and instead flushes the message to the DLQ and moves on. As a result, every message is tried at most 3 times. Using default min, max, and backoff, this may take approximately 3s.
+
+Our program prints the following output:
+
+[source]
+----
+2021-08-22 20:59:24.814  INFO 34911 --- [container-0-C-1] c.g.t.silverbroccoli.ErrorProneHandlers  : Failed to process message: n=1 attempt=1
+2021-08-22 20:59:25.817  INFO 34911 --- [container-0-C-1] c.g.t.silverbroccoli.ErrorProneHandlers  : Failed to process message: n=1 attempt=2
+2021-08-22 20:59:27.818  INFO 34911 --- [container-0-C-1] c.g.t.silverbroccoli.ErrorProneHandlers  : Failed to process message: n=1 attempt=3
+2021-08-22 20:59:27.821 ERROR 34911 --- [container-0-C-1] o.s.integration.handler.LoggingHandler   : org.springframework.messaging.MessageHandlingException: error occurred in message handler [org.springframework.cloud.stream.function.FunctionConfiguration$FunctionToDestinationBinder$1@2bc76821]; nested exception is java.lang.RuntimeException: Kaboom! Failed to process message: n=1, failedMessage=GenericMessage [payload=byte[1], headers={skip-input-type-conversion=false, kafka_offset=1, scst_nativeHeadersPresent=true, kafka_consumer=org.apache.kafka.clients.consumer.KafkaConsumer@4b4c13f0, deliveryAttempt=3, kafka_timestampType=CREATE_TIME, kafka_receivedPartitionId=0, contentType=application/json, kafka_receivedTopic=error-prone-numbers, kafka_receivedTimestamp=1629677429327, kafka_groupId=group1}]
+----
+
+This error message is enqueued to `error.error-prone-numbers.group1`, which we can consume from in the usual way. We have configured a debug consumer to confirm, which shows the DQL `toString()` output for message number 1 (`payload=1`) at offset 1 (`kafka_offset=1`):
+
+[source]
+----
+Found DLQ message: message=GenericMessage [payload=1, headers={x-original-offset=[B@2d84d106, x-original-partition=[B@cba706f, deliveryAttempt=1, kafka_timestampType=CREATE_TIME, kafka_receivedTopic=error.error-prone-numbers.group1, kafka_offset=1, x-exception-message=[B@4f07fe6a, x-exception-fqcn=[B@797d017e, scst_nativeHeadersPresent=true, kafka_consumer=org.apache.kafka.clients.consumer.KafkaConsumer@4c9ce7c7, x-original-topic=[B@72faf3b6, x-original-timestamp-type=[B@2d1ccc8e, id=2a01e567-093b-f13e-c443-944ebe37d7de, kafka_receivedPartitionId=0, contentType=application/json, x-original-timestamp=[B@5d1883e9, kafka_receivedTimestamp=1629681376203, kafka_groupId=anonymous.a8095808-e798-4f24-9c2e-fc417f483b4c, x-exception-stacktrace=[B@4c7f0fc5, timestamp=1629681376262}]
+----
+
+Note that Kafka encodes values for DLQ entires as byte arrays. I am not sure at time of writing how to change this behavior.
+
+== References
+
+. [[Kafka]] G. Shapira, T. Palino, R. Sivaram, and K. Petty, _Kafka: The Definitive Guide_, 2nd ed. Sebastopol, CA, U.S.A: O'Reilly, 2020,
