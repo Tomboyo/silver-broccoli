@@ -1,8 +1,8 @@
 server:
-  port: 8080
+  port: 8081
 spring:
   cloud:
     stream:
       kafka:
         binder:
-          brokers: ${env.kafka.bootstrapservers}
+          brokers: ${env.kafka.bootstrapservers:localhost}
