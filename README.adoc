@@ -16,6 +16,7 @@
 **  [ ] Find or build a simple CLI to inspect DLQ entries.
 * [ ] Consume a batch of messages.
 * [ ] Prioritize message consumption within a topic.
+* [ ] Research monitoring options
 
 Additional questions:
 
