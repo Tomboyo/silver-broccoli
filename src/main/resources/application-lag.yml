@@ -1,0 +1,10 @@
+spring:
+  cloud:
+    stream:
+      bindings:
+        producer-out-0:
+          destination: lag
+        consumer-in-0:
+          destination: lag
+    function:
+      definition: producer;consumer

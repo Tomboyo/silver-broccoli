@@ -17,6 +17,7 @@
 * [ ] Consume a batch of messages.
 * [ ] Prioritize message consumption within a topic.
 * [x] Research and document monitoring options
+* [ ] Research options to "stop" an enqueued task, or otherwise ignore some enqueued tasks.
 
 Additional questions:
 
