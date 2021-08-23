@@ -16,7 +16,7 @@
 **  [ ] Find or build a simple CLI to inspect DLQ entries.
 * [ ] Consume a batch of messages.
 * [ ] Prioritize message consumption within a topic.
-* [ ] Research monitoring options
+* [x] Research and document monitoring options
 
 Additional questions:
 
@@ -246,7 +246,7 @@ Note that Kafka encodes values for DLQ entires as byte arrays. I am not sure at 
 
 === Monitoring
 
-Using Spring Boot Actuator we can view all of our bindings and their status through the actuator REST API. AT a minimum we need to add actuator and web dependencies to the pom, then set the following properties:
+Using Spring Boot Actuator we can monitor and control our system through the REST API. At a minimum we need to add actuator and web dependencies to the pom, then set the following properties:
 
 [source,yml]
 ----
@@ -262,16 +262,68 @@ management:
       show-details: always
 ----
 
-WHen we navigate to /actuator/health we can see the topics our application uses along with the Kafka listeners, their state, whether they are paused, and their group IDs.
+==== Health
 
-We can also navigate to .actuator/bindings/ for a thorough overview of all Kafka producers and their effective configuration. We can also see which bindings are _pausable_. Bindings may be paused and resumed using POST requests like so:
+When we navigate to /actuator/health we can see the topics our application uses along with the Kafka listeners, their state, whether they are paused, and their group IDs.
+
+For more information, see the link:https://docs.spring.io/spring-cloud-stream/docs/current/reference/html/spring-cloud-stream.html#_health_indicator[health indicator documentation].
+
+==== Bindings configuration, control, and status
+
+The /actuator/bindings api gives an overview of effective binding configuration and status. We can  also issue POST requests to control (start, stop, pause, and unpause) those bindings. Bindings which support pausing have the `pausable` flag set to true. For example, the following curl request will pause a consumer:
 
 [source,sh]
 ----
 curl localhost:8081/actuator/bindings/consumer-in-0/ -H 'content-type: application/json' -d '{"state": "PAUSED"}'
 ----
 
-For more information, see the link:https://docs.spring.io/spring-cloud-stream/docs/current/reference/html/spring-cloud-stream.html#_health_indicator[health indicator documentation] and the link:https://docs.spring.io/spring-cloud-stream/docs/current/reference/html/spring-cloud-stream.html#binding_visualization_control[binding visualization and control documentation]. Note that link:https://stackoverflow.com/a/68896149/4816074[at this time, control of producer bindings is not supported].
+NOTE: At time of writing, link:https://stackoverflow.com/a/68896149/4816074[control of producer bindings is not supported].
+
+For more information, see the link:https://docs.spring.io/spring-cloud-stream/docs/current/reference/html/spring-cloud-stream.html#binding_visualization_control[binding visualization and control documentation].
+
+=== Metrics
+
+Browse to `/actuator/metrics` for a long list of metrics collected by default. For example, `/actuator/metrics/spring.cloud.stream.binder.kafka.offset` measures _consumer lag_, or the number of messages which have been produced to a topic but not yet consumed by a consumer group <<Kafka,[1, pp. 316]>>. We can use the `?tag=KEY:VALUE` query parameter to filter results down to a specific topic and/or consumer gorup. For example, `/actuator/metrics/spring.cloud.stream.binder.kafka.offset?tag=topic:mytopic&tag=group:mygroup` shows the lag on the `mytopic` topic for the `mygroup` consumer group.
+
+=== Alerting and Debugging
+
+In this section we will review the suggested metrics from <<Kafka,[1, ch. 11]>>. Bear in mind that most metrics endpoints can be filtered by multiple tags at once for better granularity.
+
+==== For the producer
+
+* The _record-error-rate_ metric is the rate at which producers fail to produce messages to Kafka (which are therefore lost). We should generate an alert whenever this is nonzero. The metric is found at `/actuator/metrics/kafka.producer.record.error.rate`.
+
+* The _request-latency-avg_ metric is the average amount of time that a produce request takes. We should generate an alert whenever this value is outside a measured normal for our application. The metric is found at `http://localhost:8081/actuator/metrics/kafka.producer.request.latency.avg`.
+
+* The _request-rate_ metric is the number of produce requests sent to brokers per second. Every request contains one or more batches of messages. The _record-send-rate_ measures the number of messages produced per second as a result of these batches. Finally, the _outgoing-byte-rate_ is the number of bytes overall sent per second. These metrics are available at the following endpoints:
+  ** /actuator/metrics/kafka.producer.request.rate
+  ** /actuator/metrics/kafka.producer.record.send.rate
+  ** /actuator/metrics/kafka.producer.outgoing.byte.rate
+
+* The _request-size-avg_ metric describes the average size in bytes of each producer request, which may contain one or more batches for a single topic partition. The average size of each batch is measured by the _batch-size-avg_ metric. The average size of any individual message is measured by _record-size-avg_, again in bytes. The average number of records in a produce request is tracked by _records-per-request-avg_. The following endpoints expose these metrics:
+  ** actuator/metrics/kafka.producer.request.size.avg
+  ** actuator/metrics/kafka.producer.batch.size.avg
+  ** actuator/metrics/kafka.producer.record.size.avg
+  ** actuator/metrics/kafka.producer.records.per.request.avg
+
+*  The _record-queue-time-avg_ is the average amount of time between when a record is ready to be sent to the broker and when it is actually produced, in milliseconds. For context, be aware that when a producer delivers messages to Kafka, it attempts to do so in large batches. Producers will wait until `batch.size` messages are ready to send before producing. Producers will only wait up to `linger.ms` milliseconds, however, at which point they will send whatever messages they already have. The _record-queue-time-avg_ can indicate when the `batch.size` and `linger.ms` configuration of the Kafka producers are effective. This metric is published at `/actuator/metrics/kafka.producer.record.queue.time.avg`.
+
+==== For the consumer
+
+The consumer metrics we are interested in are all actually "fetch manager" metrics.
+
+* The _fetch-latency-avg_ metric measures how long fetch requests to the broker take, which we may be able to generate alerts from based on measured normal latency. This is impacted by the consumer properties `fetch.min.bytes` and `fetch.max.wait.ms`. Similar to how batches are sent to the broker, consumers wait until a certain number of bytes worth of messages are available to fetch all at once, or until a certain timeout, in order to better utilize network and broker resources. As a result, latency can vary depending on topic activity, which may hamper attempts at using this metric for alerting. This metric is exposed at `/actuator/metrics/kafka.consumer.fetch.manager.fetch.latency.avg`.
+
+* We should avoid the _records-lag-max_ metric, which measures consumer lag _only_ for the single worst partition a consumer is working on. Spring provides an alternative, _kafka offset_, which measures the total number of unconsumed messages by topic and/or group. This metric is exposed at `/actuator/metrics/spring.cloud.stream.binder.kafka.offset`.
+
+* The _records-consumed-rate_  measures the number of messages consumed per second by a client. Similarly, the _bytes-consumed-rate_ measure the total number of bytes consumed by a client. These are exposed by the following endpoints:
+  ** /actuator/metrics/kafka.consumer.fetch.manager.records.consumed.rate
+  ** /actuator/metrics/kafka.consumer.fetch.manager.bytes.consumed.rate
+
+* The _fetch-rate_ metric measures the average number of fetch requests made by a consumer per second. The _fetch-size-avg_ measures the average number of bytes of those requests, and the _records-per-request-avg_ gives us the average number of messages per fetch. There _is not_ an equivalent to the producer record-size-average metric by default. The following endpoints expose these data:
+  ** /actuator/metrics/kafka.consumer.fetch.manager.fetch.rate
+  ** /actuator/metrics/kafka.consumer.fetch.manager.fetch.size.avg
+  ** /actuator/metrics/kafka.consumer.fetch.manager.records.per.request.avg
 
 == References
 
