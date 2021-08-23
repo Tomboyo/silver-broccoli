@@ -244,6 +244,37 @@ Found DLQ message: message=GenericMessage [payload=1, headers={x-original-offset
 
 Note that Kafka encodes values for DLQ entires as byte arrays. I am not sure at time of writing how to change this behavior.
 
+=== Monitoring
+
+Using Spring Boot Actuator we can view all of our bindings and their status through the actuator REST API. AT a minimum we need to add actuator and web dependencies to the pom, then set the following properties:
+
+[source,yml]
+----
+management:
+  endpoints:
+    web:
+      exposure:
+        # Or '*' to enble everything.
+        include: 'bindings'
+  endpoint:
+    health:
+      # Optional, but informative.
+      show-details: always
+----
+
+WHen we navigate to /actuator/health we can see the topics our application uses along with the Kafka listeners, their state, whether they are paused, and their group IDs.
+
+We can also navigate to .actuator/bindings/ for a thorough overview of all Kafka producers and their effective configuration. We can also see which bindings are _pausable_. Bindings may be paused and resumed using POST requests like so:
+
+[source,sh]
+----
+curl localhost:8081/actuator/bindings/producer-out-0/ -H 'content-type: application/json' -d '{"state": "PAUSED"}'
+----
+
+For more information, see the link:https://docs.spring.io/spring-cloud-stream/docs/current/reference/html/spring-cloud-stream.html#_health_indicator[health indicator documentation] and the link:https://docs.spring.io/spring-cloud-stream/docs/current/reference/html/spring-cloud-stream.html#binding_visualization_control[binding visualization and control documentation].
+
+I have also asked link:https://stackoverflow.com/questions/68895758/spring-cloud-stream-with-kafka-binder-bindings-actuator-api-does-not-stop-prod[this question on stack overflow] to determine if pollable producers can be stopped and resumed.
+
 == References
 
 . [[Kafka]] G. Shapira, T. Palino, R. Sivaram, and K. Petty, _Kafka: The Definitive Guide_, 2nd ed. Sebastopol, CA, U.S.A: O'Reilly, 2020,

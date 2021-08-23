@@ -6,3 +6,11 @@ spring:
       kafka:
         binder:
           brokers: ${env.kafka.bootstrapservers:localhost}
+management:
+  endpoints:
+    web:
+      exposure:
+        include: '*'
+  endpoint:
+    health:
+      show-details: always
