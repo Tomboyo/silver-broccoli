@@ -268,12 +268,10 @@ We can also navigate to .actuator/bindings/ for a thorough overview of all Kafka
 
 [source,sh]
 ----
-curl localhost:8081/actuator/bindings/producer-out-0/ -H 'content-type: application/json' -d '{"state": "PAUSED"}'
+curl localhost:8081/actuator/bindings/consumer-in-0/ -H 'content-type: application/json' -d '{"state": "PAUSED"}'
 ----
 
-For more information, see the link:https://docs.spring.io/spring-cloud-stream/docs/current/reference/html/spring-cloud-stream.html#_health_indicator[health indicator documentation] and the link:https://docs.spring.io/spring-cloud-stream/docs/current/reference/html/spring-cloud-stream.html#binding_visualization_control[binding visualization and control documentation].
-
-I have also asked link:https://stackoverflow.com/questions/68895758/spring-cloud-stream-with-kafka-binder-bindings-actuator-api-does-not-stop-prod[this question on stack overflow] to determine if pollable producers can be stopped and resumed.
+For more information, see the link:https://docs.spring.io/spring-cloud-stream/docs/current/reference/html/spring-cloud-stream.html#_health_indicator[health indicator documentation] and the link:https://docs.spring.io/spring-cloud-stream/docs/current/reference/html/spring-cloud-stream.html#binding_visualization_control[binding visualization and control documentation]. Note that link:https://stackoverflow.com/a/68896149/4816074[at this time, control of producer bindings is not supported].
 
 == References
 
