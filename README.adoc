@@ -343,7 +343,7 @@ WARNING: Kafka _does not_ support XA transactions. In other words, if a message 
 
 WARNING: The documentation warns that a common producer factory is used for all producer bindings configured using spring.cloud.stream.kafka.binder.transaction.producer.* properties, and therefore individual binding Kafka producer properties are ignored (link:https://docs.spring.io/spring-cloud-stream-binder-kafka/docs/3.0.10.RELEASE/reference/html/spring-cloud-stream-binder-kafka.html#kafka-transactional-binder[source]). This appears to mean that the kafka transactional producer properties _take precedence_, since we are still able to configure partitions and topic retention as normal.
 
-Refer to `TransactionalHandlers.java` for examples of transactional, EOS producers and consumers equipped with retry and DLQ. I could not figure out how to get docker-compose kafka to respect transactions, so this requires you to set up an instance yourself (or integrate with a hosted instance using `local` and `sasl` profiles, which is what I do.) This example also demonstrates an idempotent database interaction using an atomic PostgreSQL query, so you need to start postgresql locally with `docker-compose -f docker-compose-psql.yml up`. JPA does not have a clean way to handle duplicate inserts or unique constraint violations, so we went for native SQL. Research suggests this is the simplest and safest way to achieve atomic, ideompotent upsert.
+Refer to `TransactionalHandlers.java` for examples of transactional, EOS producers and consumers equipped with retry and DLQ. I could not figure out how to get docker-compose kafka to respect transactions, so this requires you to set up an instance yourself (or integrate with a hosted instance using `local` and `sasl` profiles, which is what I do.) This example also demonstrates an idempotent database interaction using an atomic PostgreSQL query, so you need to start postgresql locally with `docker-compose -f docker-compose-psql.yml up`. JPA does not have a clean way to handle duplicate inserts or unique constraint violations, so we went for native SQL. Research suggests this is the simplest and safest way to achieve atomic, ideompotent inserts.
 
 [source,shell]
 ----
@@ -351,7 +351,7 @@ docker-compose -f docker-compose-psql.yml up
 SPRING_PROFILES_ACTIVE=local,sasl,transactional ./mvnw spring-boot:run
 ----
 
-This example silences all but com.github.tomboyo logging so we can more easily follow the program as it attempts to process messages. We can also inspect the `audit_log` database table to confirm that the program creates corresponding audit entries whose uniqueness is maintained by the idempotent upserts.
+This example silences all but com.github.tomboyo logging so we can more easily follow the program as it attempts to process messages. We can also inspect the `audit_log` database table to confirm that the program creates corresponding audit entries whose uniqueness is maintained by the idempotent inserts.
 
 == References
 
