@@ -10,7 +10,8 @@
 * [x] Consume messages from one topic concurrently.
 * [x] Demonstrate re-tried message consumption.
 * [x] Demonstrate bounded re-try so that unprocessable entities do not block the topic.
-* [ ] Create an idempotent message consumer
+* [x] Create an idempotent message consumer
+* [x] Create a transactional consumer
 * [x] Enable DLQ for a topic.
 **  [x] Demonstrate how to consume from a DLQ.
 **  [ ] Find or build a simple CLI to inspect DLQ entries.
@@ -44,7 +45,7 @@ In one terminal, start Kafka and Zookeeper using docker-compose:
 
 [source,sh]
 ----
-docker-compose up
+docker-compose -f docker-compose-kafka.yml up
 ----
 
 In another terminal, launch the application with desired profiles:
@@ -148,6 +149,8 @@ To process one message and generate another as a result (that is, transform a me
 include::src/main/java/com/github/tomboyo/silverbroccoli/NumberHandlers.java[tag=transform-message-with-function]
 ----
 
+NOTE: By default, consumers in anonymous consumer groups seek to the end of a partition when they join for the first time. Consumers with named groups seek to the _beginning_ of partitions instead. In other words: Named groups will try to process all available messages, both new and historical, while anonymous groups only process new messages relative to when they subscribe to the partition.
+
 === Structured Messages
 
 Spring Cloud Stream supports structures messages. We simply use Jackson-annotated POJOs as message objects. For an example, see NumberMessage.java and NumberHandlers.java.
@@ -203,7 +206,7 @@ spring:
 
 ==== Redelivery
 
-In the event of broker failure or application disconnect, recovery falls back on Kafka consumer offsets, which we will summarize based on <<Kafka, [1, pp. 97-99]>> in this paragraph. Message consumers do not ACK each individual message like is typical for JMS. Instead, consumers have an _offset_ for each partition which tracks the index of the last retrieved message. Consumers periodically _commit_ their current offsets for their partitions to the broker, which saves them persistently. At any time, a consumer's offset may be behind or ahead of the offset of their last successfully _processed_ message, depending on the commit strategy. After a crash or rebalance (the assignment of partitions to consumers which happens as consumers connect and disconnect), consumers retrieve offsets for their partitions from the broker, then start consuming messages. If the last committed offset is _behind_ the most recently retrieved message for a partition (that is, a consumer received some messages but had not yet committed an updated offset prior to a crash), then the broker will re-deliver some messages (the already-delivered message will be delivered again). If the last committed offset was _ahead_ of their last retrieved message (that is, the consumer committed an offset before retrieving messages up to that offset, then crashed), then those messages will never be delivered.
+In the event of broker failure or application disconnect, recovery falls back on Kafka consumer offsets, which we will summarize based on [<<Kafka>>, pp. 97-99] in this paragraph. Message consumers do not ACK each individual message like is typical for JMS. Instead, consumers have an _offset_ for each partition which tracks the index of the last retrieved message. Consumers periodically _commit_ their current offsets for their partitions to the broker, which saves them persistently. At any time, a consumer's offset may be behind or ahead of the offset of their last successfully _processed_ message, depending on the commit strategy. After a crash or rebalance (the assignment of partitions to consumers which happens as consumers connect and disconnect), consumers retrieve offsets for their partitions from the broker, then start consuming messages. If the last committed offset is _behind_ the most recently retrieved message for a partition (that is, a consumer received some messages but had not yet committed an updated offset prior to a crash), then the broker will re-deliver some messages (the already-delivered message will be delivered again). If the last committed offset was _ahead_ of their last retrieved message (that is, the consumer committed an offset before retrieving messages up to that offset, then crashed), then those messages will never be delivered.
 
 S.C.S. handles offset commits on our behalf. By default, S.C.S. commits offsets after the current batch of retrieved messages is processed. This is governed by the `autoCommitOffset` and `ackEachRecord` parameters. The `autoCommitOffset` defaults to `true`, instructing the framework to commit offsets after messages are processed. The `ackEachRecord` parameter defaults to `false`, instructing S.C.S. to commit offsets only after each _batch_ of messages has been processed rather than after each individual message. See link:https://cloud.spring.io/spring-cloud-stream-binder-kafka/spring-cloud-stream-binder-kafka.html#kafka-consumer-properties[Kafka consumer properties documentation for the Kafka binder] for more information.
 
@@ -284,11 +287,11 @@ For more information, see the link:https://docs.spring.io/spring-cloud-stream/do
 
 === Metrics
 
-Browse to `/actuator/metrics` for a long list of metrics collected by default. For example, `/actuator/metrics/spring.cloud.stream.binder.kafka.offset` measures _consumer lag_, or the number of messages which have been produced to a topic but not yet consumed by a consumer group <<Kafka,[1, pp. 316]>>. We can use the `?tag=KEY:VALUE` query parameter to filter results down to a specific topic and/or consumer gorup. For example, `/actuator/metrics/spring.cloud.stream.binder.kafka.offset?tag=topic:mytopic&tag=group:mygroup` shows the lag on the `mytopic` topic for the `mygroup` consumer group.
+Browse to `/actuator/metrics` for a long list of metrics collected by default. For example, `/actuator/metrics/spring.cloud.stream.binder.kafka.offset` measures _consumer lag_, or the number of messages which have been produced to a topic but not yet consumed by a consumer group [<<Kafka>>, pp. 316]. We can use the `?tag=KEY:VALUE` query parameter to filter results down to a specific topic and/or consumer gorup. For example, `/actuator/metrics/spring.cloud.stream.binder.kafka.offset?tag=topic:mytopic&tag=group:mygroup` shows the lag on the `mytopic` topic for the `mygroup` consumer group.
 
 === Alerting and Debugging
 
-In this section we will review the suggested metrics from <<Kafka,[1, ch. 11]>>. Bear in mind that most metrics endpoints can be filtered by multiple tags at once for better granularity.
+In this section we will review the suggested metrics from [<<Kafka>>, ch. 11]. Bear in mind that most metrics endpoints can be filtered by multiple tags at once for better granularity.
 
 ==== For the producer
 
@@ -326,6 +329,30 @@ The consumer metrics we are interested in are all actually "fetch manager" metri
   ** /actuator/metrics/kafka.consumer.fetch.manager.fetch.size.avg
   ** /actuator/metrics/kafka.consumer.fetch.manager.records.per.request.avg
 
+=== Transactions, Exactly Once Semantics (EOS), and Idempotence
+
+Kafka supports _exactly once semantics_ (EOS) that ensure messages are produced and consumed exactly one time. To guarantee exactly-once, Kafka ensures producers are _idempotent_, and our applications will frequently use _transactions_ to guard against duplicate side effects. These three things are all different aspects of the same concept.
+
+An _idempotent_ producer is one that cannot produce a duplicate message as a result of retry (such as to recover from network or broker failures). When idempotent producers start, they retrieve a unique identifier from a Kafka broker. When an idempotent producer produces a message, it adds its unique id and the sequence number of the message. Combined with the topic and partition name, these uniquely identify the message. By default, the broker keeps track of the last 5 message IDs received per partition, and producers maintain no more than 5 in-flight requests. Together these allow brokers to reject all duplicate messages they might receive. For more information, such as how failover and disconnect scenarios are managed, see [<<Kafka>>, ch. 8].
+
+NOTE: EOS semantics prevent duplicate delivery caused by producer retry. They do not prevent our application from producing the same content multiple times. For this reason we should rely on the producer mechanism exclusively to manage retry. If our application can generate identical message contents (e.g. if two producers read data from the same data source at the same time), we will need idempotence logic at the application level.
+
+Stream processing may rely on transactions to guarantee EOS. Transactional processing uses transactions in the familiar way to ensure that a group of actions succeeds or fails atomically. While idempotent producers have a unique producer id which can change when producers restart, transactional producers maintain a consistent producer id that may be used to identify the same producer between restarts. When transactional producers produce messages, they are saved to a partition just like normal messages. By default, consumers read all messages, including uncommitted ones. Consumers may be configured instead to only read _committed_ messages. In this case they rely on the broker to track transaction boundaries within a partition, and in particular to track the position of the _last stable offset (LSO)_, the offset of the first still-open transaction in the partition. Consumers will _only_ consume messages from a partition up to the LSO. If any transaction is uncommitted, it prevents consumers from fetching any later messages, including non-transacted and committed messages, from the same partition. By default, transactions time out after 15 minutes.
+
+WARNING: Kafka _does not_ support XA transactions. In other words, if a message handler successfully commits a database record in a transaction but does not successfully commit a message to Kafka, the database transaction _will not roll back._ For a message producer, this may simply mean our application needs to re-generate the message contents. For a transform function in the middle of a pipeline, though, this may lead to re-delivered messages. We are therefore advised to make all our database operations _idempotent_. When Kafka re-delivers the message our transform failed to consume fully, an idempotent database operation will amount to a no-op if it succeeded the last time we received the message, and so there is no harm done. It is possible, however, that a message may be chronically unprocessable. We may need a way to remove the orphaned database entry (perhaps as a consequence of DLQ processing).
+
+WARNING: The documentation warns that a common producer factory is used for all producer bindings configured using spring.cloud.stream.kafka.binder.transaction.producer.* properties, and therefore individual binding Kafka producer properties are ignored (link:https://docs.spring.io/spring-cloud-stream-binder-kafka/docs/3.0.10.RELEASE/reference/html/spring-cloud-stream-binder-kafka.html#kafka-transactional-binder[source]). This appears to mean that the kafka transactional producer properties _take precedence_, since we are still able to configure partitions and topic retention as normal.
+
+Refer to `TransactionalHandlers.java` for examples of transactional, EOS producers and consumers equipped with retry and DLQ. I could not figure out how to get docker-compose kafka to respect transactions, so this requires you to set up an instance yourself (or integrate with a hosted instance using `local` and `sasl` profiles, which is what I do.) This example also demonstrates an idempotent database interaction using an atomic PostgreSQL query, so you need to start postgresql locally with `docker-compose -f docker-compose-psql.yml up`. JPA does not have a clean way to handle duplicate inserts or unique constraint violations, so we went for native SQL. Research suggests this is the simplest and safest way to achieve atomic, ideompotent upsert.
+
+[source,shell]
+----
+docker-compose -f docker-compose-psql.yml up
+SPRING_PROFILES_ACTIVE=local,sasl,transactional ./mvnw spring-boot:run
+----
+
+This example silences all but com.github.tomboyo logging so we can more easily follow the program as it attempts to process messages. We can also inspect the `audit_log` database table to confirm that the program creates corresponding audit entries whose uniqueness is maintained by the idempotent upserts.
+
 == References
 
-. [[Kafka]] G. Shapira, T. Palino, R. Sivaram, and K. Petty, _Kafka: The Definitive Guide_, 2nd ed. Sebastopol, CA, U.S.A: O'Reilly, 2020,
+. [[Kafka,1]] G. Shapira, T. Palino, R. Sivaram, and K. Petty, _Kafka: The Definitive Guide_, 2nd ed. Sebastopol, CA, U.S.A: O'Reilly, 2020,

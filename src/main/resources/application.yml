@@ -6,6 +6,10 @@ spring:
       kafka:
         binder:
           brokers: ${env.kafka.bootstrapservers:localhost}
+  datasource:
+    url: jdbc:postgresql://localhost:5432/sb
+    username: admin
+    password: password
 management:
   endpoints:
     web:

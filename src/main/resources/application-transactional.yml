@@ -1,0 +1,61 @@
+spring:
+  cloud:
+    stream:
+      kafka:
+        binder:
+          transaction:
+            transaction-id-prefix: 'tx-'
+            producer:
+              # These settings apply to all transacted producers (be they
+              # suppliers or functions).
+              configuration:
+                retries: 3
+                acks: all
+        bindings:
+          function-in-0:
+            consumer:
+              enableDlq: true
+          function-out-0:
+            producer:
+              topic.properties:
+                retention.bytes: 10000
+      bindings:
+        supplier-out-0:
+          destination: tx-number
+        supplierConfirmation-in-0:
+          destination: tx-number
+          # Named consumer groups set their offset to the beginning of new
+          # partitions by default. Anonymous groups seek to the end instead.
+          group: tx-number-a
+          consumer:
+            properties:
+              # This consumer will not read uncommitted transaction messages.
+              isolation.level: read_committed
+        function-in-0:
+          destination: tx-number
+          group: tx-number-b
+          consumer:
+            maxAttempts: 2
+            properties:
+              isolation.level: read_committed
+        function-out-0:
+          destination: tx-string
+          producer:
+            partitionCount: 3
+        dlqLogger-in-0:
+          destination: error.tx-number.tx-number-b
+          group: error-a
+        functionConfirmation-in-0:
+          destination: tx-string
+          group: tx-string-a
+          consumer:
+            properties:
+              isolation.level: read_committed
+      poller:
+        fixed-delay: 5000
+    function:
+      definition: supplier;function;supplierConfirmation;functionConfirmation;dlqLogger
+logging:
+  level:
+    root: OFF
+    com.github.tomboyo: INFO
