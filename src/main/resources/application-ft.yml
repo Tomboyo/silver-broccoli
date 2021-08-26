@@ -1,0 +1,24 @@
+spring:
+  cloud:
+    stream:
+      kafka:
+        binder:
+          transaction:
+            transaction-id-prefix: 'tx-'
+          required-acks: all
+      bindings:
+        persistAndSplit-in-0:
+          destination: input
+          group: input
+        logger-in-0:
+          destination: left,right,input.DLT
+          group: logger
+          consumer:
+            properties:
+              isolation.level: read_committed
+    function:
+      definition: persistAndSplit;logger
+logging:
+  level:
+    root: OFF
+    com.github.tomboyo: INFO
