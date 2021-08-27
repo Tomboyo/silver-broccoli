@@ -1,62 +1,63 @@
-= Silver Broccoli: Spring Cloud Stream (SCS) + Apache Kafka Evaluation
+= Silver Broccoli: Kafka Evaluation
 
-* [x] Document how to connect to a RHOAS Kafka instance.
-* [x] Auto configure a topic.
-* [x] Generate messages into the topic on a schedule.
-* [x] Enqueue a message in response to arbitrary external stimuli.
-* [x] Use a structured message type (A jackson-serialized POJO)
-* [x] Enqueue a message as a consequence of processing another.
-** [ ] Produce multiple messages.
-* [x] Consume messages from one topic concurrently.
-* [x] Demonstrate re-tried message consumption.
-* [x] Demonstrate bounded re-try so that unprocessable entities do not block the topic.
-* [x] Create an idempotent message consumer
-* [x] Create a transactional consumer
-* [x] Enable DLQ for a topic.
-**  [x] Demonstrate how to consume from a DLQ.
-**  [ ] Find or build a simple CLI to inspect DLQ entries.
-* [ ] Consume a batch of messages.
-* [ ] Prioritize message consumption within a topic.
-* [x] Research and document monitoring options
-* [ ] Research options to "stop" an enqueued task, or otherwise ignore some enqueued tasks.
+This project is an evaluation of Apache Kafka and supporting integration libraries based on their ability to create an application with all the capabilities listed below. Each integration library is given its own project folder and chapter in this document.
 
-Additional questions:
+Requirements:
+
+. Connect to the instance using SASL and TLS.
+. Configure two topics (with partitions and replication settings).
+. Produce one or more structured (i.e. from POJOs) messages to each topic on demand. (This should work for any arbitrary stimuli, not just a framework hook.)
+. Consume messages from the topics
+  .. concurrently (in a competing-consumer relationship)
+  .. as well as in a pub-sub relationship,
+  .. with bounded retry,
+  .. and dead-lettering,
+  .. such that one topic has priority over the other.
+. Produce multiple messages as a result of processing to two different topics
+  .. within a transaction
+  .. which is synchronized (non-XA) with a database transaction (for an idempotent database operation).
+. Inspect the dead-letter topic (DLT).
+. Gather metrics suitable for monitoring (to include everything recommended by [<<Kafka>>, ch. 11]).
+. Create a batch consumer.
+
+== 1. Spring Cloud Stream
+
+Progress so far:
+
+* [x] Connect to the instance using SASL and TLS.
+* [x] Configure `input-high`, `input-low`, `input-high.DLT`, `input-low.DLT`, `left`, and `right` topics (with partitions, replication, and retention settings).
+* [x] Produce one or more structured (e.g. JSON via Jackson) messages to `input-high` and `input-low` on demand. (This should work for any arbitrary stimuli, not just a framework hook.)
+* [x] Consume messages from the topics
+  ** [x] concurrently (in a competing-consumer relationship)
+  ** [x] as well as in a pub-sub relationship (e.g. a Logger),
+  ** [x] with bounded retry,
+  ** [x] and dead-lettering,
+  ** [ ] such that one topic has priority over the other.
+* [x] Produce multiple messages to multiple topics as a result of processing one message.
+  ** [x] within a transaction
+  ** [x] which is synchronized (non-XA) with a database transaction (for an idempotent database operation).
+* [x] Inspect the dead-letter topic (DLT).
+* [x] Gather metrics suitable for monitoring (to include everything recommended by [<<Kafka>>, ch. 11]).
+* [ ] Create a batch consumer.
+
+Additional research questions:
 
 * [ ] What is the default message key used for partition selection?
 * [ ] How do you change the default encoding of DLQ entries? The default is byte-arrays for values.
 
-== Documentation Links
+=== Documentation Links
 
-Refer to the following:
+Refer to the following documentation:
 
-* link:https://github.com/spring-cloud/spring-cloud-stream-samples[Sample S.C.S. projects].
 * link:https://docs.spring.io/spring-cloud-stream/docs/current/reference/html/spring-cloud-stream.html#spring-cloud-stream-reference[Spring Cloud Stream]
 * link:https://cloud.spring.io/spring-cloud-stream-binder-kafka/spring-cloud-stream-binder-kafka.html#_apache_kafka_binder[Apache Kafka Binder for Spring Cloud Stream]
+* link:https://github.com/spring-cloud/spring-cloud-stream-samples[Sample S.C.S. projects]
+* link:https://docs.spring.io/spring-kafka/docs/current/reference/html/[Spring Kafka]
 * link:https://kafka.apache.org/documentation/#configuration[Kafka configuration properties] (see topic and producer configs).
 
-== Development Setup
+=== Setup And Run
 
-For local development you may either perform integrated testing in a docker-compose environment or with an externally deployed Kafka instance using the `sasl` profile.
-
-=== Docker Compose
-In this section we will launch and integrate with a local instance of Kafka using docker-compose.
-
-In one terminal, start Kafka and Zookeeper using docker-compose:
-
-[source,sh]
-----
-docker-compose -f docker-compose-kafka.yml up
-----
-
-In another terminal, launch the application with desired profiles:
-
-[source,sh]
-----
-SPRING_PROFILES_ACTIVE=numbers ./mvnw spring-boot:run
-----
-
-=== External Kafka Integration (With SASL Authentication)
-In this section we will run the application from maven and integrate with an external kafka instance using SSL-encrypted SASL/PLAIN (username and password) authentication. We will inject SASL configuration into the application environment using an untracked application profile, but we could also set environment variables with the same names.
+This project assumes you have an Apache Kafka instance already running, such as hosted at console.redhat.com/beta. We will integrate with the instance using SASL/PLAIN authentication protected by TLS. It also requires an instance of PostgreSQL, which we provide a docker-compose file for.
 
 To begin, create a `config/application-local.yml` file. This file will hold custom environment configuration and secrets which we do not want to commit to the repository. This file is already git-ignored. Add the following required fields:
 
@@ -71,22 +72,28 @@ env:
     password: <service account password>
 ----
 
-Now launch the application with both the `sasl` and `local` profiles enabled. The `local` profile will simply read the application-local.yml file. The `sasl` profile maps those configurations to appropriate Kafka and SASL configurations.
+Then launch the application:
 
-NOTE: If we did not want to use an `application-local.yml` file, we could set environment properties of corresponding names (e.g. `env.kafka.bootstrapservers=localhost:1234`). In this case, we would not need to set the `local` profile.
-
-To launch the application, invoke the following command:
-
-[source,sh]
+[source, shell]
 ----
+cd spring-cloud-stream/
+docker-compose up
 SPRING_PROFILES_ACTIVE=local,sasl ./mvnw spring-boot:run
 ----
 
-== Evaluation Notes
+NOTE: We can set environment variables like `env.kafka.user=foo` instead of using the local profile. Either way is sufficient.
 
-=== Topic Configuration
+=== 1. SASL Authentication
 
-We can manually set up topics on an external broker, or we can automatically provision them when the application starts. The latter is controlled by binding configurations like the following:
+We instruct Spring to connect with Kafka using SASL and TLS by setting the appropriate properties; see `application-sasl.yml`, which sets those properties. Furthermore, we must configure a `KafkaJaasLoginModuleInitializer` bean to configure our username and password in JAAS, which we do in `SaslConfiguration.java`.
+
+Mentioned earlier, the `sasl` profile relies on properties set either in the `local` configuration or in the environment.
+
+WARNING: At tine of writing, this is under-documented.
+
+=== 2. Topic Configuration
+
+Spring Cloud Stream can configure topics with properties under producer bindings, like so:
 
 [source,yml]
 ----
@@ -95,160 +102,165 @@ spring:
     stream:
       bindings:
         producer-out-0:
-          destination: numbers
           producer:
-            # Provision new topics with 3 partitions. This configuration only
-            # applies to producer bindings like this one.
-            partitionCount: 3
-      # Some producer configurations only apply to kafka, so they are are under
-      # the s.c.s.kafka namespace.
+            partitionCount: 3 # Provision new topics with 3 partitions.
       kafka:
         bindings:
           producer-out-0:
             producer:
-              # Everything under this key is a native kafka configuration. See
-              # below for a link to kafka.apache.org documentation.
               topic.properties:
-                # Retain only 10,000 bytes. The default is unlimited (-1).
-                retention.bytes: 10000
-                # Retain messages for 2 days. The default is 7. -1 is unlimited.
-                retention.ms: 172800000
+                retention.bytes: 10000 # Maximum messages to retain, in bytes
+                retention.ms: 60000    # How long to retain messages for, in ms
 ----
 
-Kafka-specific property configuration may be found link:https://kafka.apache.org/documentation/#topicconfigs[here]. Note that new partitions can be added to existing topics, but is disabled by default (see kafka binder documentation for spring.cloud.stream.kafka.binder.autoAddPartitions).
+Some properties are kafka-specific, however, which is why we have both `s.c.s.bindings` and `s.c.s.kafka.bindings` in this example. Note that multiple bindings could produce to the same topic, but topic configuration should be defined only once. This said, we prefer to use the `TopicBuilder` from Spring Kafka to register new topics as `@Bean`s. This has the advantage of placing all properties in the same place, and avoids the multiple-bindings issue.
 
-=== Generate And Consume Messages
+See `Topics.java` for an example:
 
-In this section we produce, transform, and consume messages using the native java functional types `Supplier`, `Function`, and `Consumer`. We will look at the more nuanced Reactor types `Flux` and `Mono` in a separate section.
-
-To generate messages on a short fixed schedule (say, once a second), we can either configure a `Supplier<Flux<T>>` bean or just a `Supplier<T>` bean. The former must manually control the production rate, whereas the latter relies on S.C.S's global polling schedule (see link:https://docs.spring.io/spring-cloud-stream/docs/current/reference/html/spring-cloud-stream.html#_polling_configuration_properties[polling configuration]). This application registers a `Supplier` to emit numbers to a topic. Find the relevant code in SilverBroccoliApplication.java below.
-
-[source,java]
+[source, java]
 ----
-include::src/main/java/com/github/tomboyo/silverbroccoli/NumberHandlers.java[tag=generate-message-with-supplier]
-----
-
-To generate messages in response to arbitrary external events, we use an instance of  link:https://docs.spring.io/spring-cloud-stream/docs/current/reference/html/spring-cloud-stream.html#_sending_arbitrary_data_to_an_output_e_g_foreign_event_driven_sources[StreamBridge]. StreamBridge allows us to enqueue messages one at a time to an arbitrary spring binding, which maps the message to a Kafka topic. This application serves a REST API (`POST /number`) which uses StreamBridge to enqueue a message in response to HTTP requests. Find the relevant code in NumberRestController.java below.
-
-[source,java]
-----
-include::src/main/java/com/github/tomboyo/silverbroccoli/NumberRestController.java[tag=generate-message-with-streambridge]
+@Bean
+  public NewTopic inputHighTopic() {
+    return TopicBuilder.name("input-high")
+        .partitions(3)
+        .replicas(2)
+        .config(TopicConfig.RETENTION_MS_CONFIG, "60000")
+        .build();
+  }
 ----
 
-To consume a message, we register an instance of `Consumer<IN>`. Find the relevant code in SilverBroccoliApplication.java below.
+WARNING: If the name of the bean (which is the function name by default) matches the name of the topic, Spring will fail with errors stating that the topic bean's type was NewTopic when SubscribableChannel was expected. This is not documented. Spring appears to mistake the `@Bean` for an internal representation of the topic with the same name.
 
-[source,java]
+=== 3. Producing Structured Messages
+
+We use `StreamBridge` to produce messages to any topic at any time, such as on application startup or in response to HTTP requests. S.C.S. automatically JSON-serializes objects using Jackson; no configuration is required.
+
+WARNING: If we define a POJO without a default constructor (or possible without other fields required for Jackson serialization), Spring will not raise Jackson serialization errors. It instead fails to rectify the `byte[]` format used by Kafka with the Pojo type. This is not documented.
+
+=== 4. Consume Messages
+
+We consume messages from a topic by registering a `Consumer<T>` bean and configuring a binder for the consumer. Consider the following:
+
+[source, java]
 ----
-include::src/main/java/com/github/tomboyo/silverbroccoli/NumberHandlers.java[tag=consume-message-with-consumer]
-----
-
-To process one message and generate another as a result (that is, transform a message), we register an instance of `Function<IN, OUT>`. This is very similar to how we register producers and consumers. Find the relevant code in SilverBroccoliApplication.java below.
-
-[source,java]
-----
-include::src/main/java/com/github/tomboyo/silverbroccoli/NumberHandlers.java[tag=transform-message-with-function]
-----
-
-NOTE: By default, consumers in anonymous consumer groups seek to the end of a partition when they join for the first time. Consumers with named groups seek to the _beginning_ of partitions instead. In other words: Named groups will try to process all available messages, both new and historical, while anonymous groups only process new messages relative to when they subscribe to the partition.
-
-=== Structured Messages
-
-Spring Cloud Stream supports structures messages. We simply use Jackson-annotated POJOs as message objects. For an example, see NumberMessage.java and NumberHandlers.java.
-
-=== Concurrent Message Consumers
-
-In NumberHandlers.java, we have configured a `debugConsumer` message handler to consume from and display metadata about the `number-structured` topic. The topic has three partitions, and we start two consumer instances. The resulting output looks like the following:
-
-----
-2021-08-20 17:29:48.144  INFO 53572 --- [container-0-C-1] c.g.t.s.SilverBroccoliApplication        :
-Partition=0
-Thread=KafkaConsumerDestination{consumerDestinationName='numbers-structured', partitions=3, dlqName='null'}.container-0-C-1
-ConsumerGroup=anonymous.f247e2f0-b12c-488e-9607-b940ef07d236
-Payload=NumberMessage{ number=12 }
-
-2021-08-20 17:29:49.145  INFO 53572 --- [container-0-C-1] c.g.t.s.SilverBroccoliApplication        :
-Partition=1
-Thread=KafkaConsumerDestination{consumerDestinationName='numbers-structured', partitions=3, dlqName='null'}.container-0-C-1
-ConsumerGroup=anonymous.f247e2f0-b12c-488e-9607-b940ef07d236
-Payload=NumberMessage{ number=13 }
-
-2021-08-20 17:29:50.137  INFO 53572 --- [container-1-C-1] c.g.t.s.SilverBroccoliApplication        :
-Partition=2
-Thread=KafkaConsumerDestination{consumerDestinationName='numbers-structured', partitions=3, dlqName='null'}.container-1-C-1
-ConsumerGroup=anonymous.f247e2f0-b12c-488e-9607-b940ef07d236
-Payload=NumberMessage{ number=14 }
+@Bean
+public Consumer<String> myConsumer() {
+  return x -> {
+    LOGGER.info("Got a message: " + x);
+  }
+}
 ----
 
-Above we see that the application (running in one JVM) has consumed three messages from the `numbers-structured` topic. They were consumed from the 0th, 1st, and 2nd partitions of the topic respectively. The thread is printed with each message. Since we're using the Kafka binder, threads are one-to-one with consumers. Since we can see only two threads (0-C-1 and 1-C-1), we know there are only two consumers drawing from all three partitions. This is expected: When a smaller number of consumers than partitions is configured, Kafka will balance some consumers to draw from multiple partitions. Note, however, that at most one consumer from a single consumer group may consume from any partition.
-
-Concurrency configuration for Kafka is simple. The only required parameter is `consumer.concurrency`, which instructs S.C.S. to start multiple consumer instances and threads. By default, producers will distribute messages across partitions, though this can be customized with the partition selection and partition key families of configuration options (see link:https://docs.spring.io/spring-cloud-stream/docs/current/reference/html/spring-cloud-stream.html#spring-cloud-stream-overview-configuring-output-bindings-partitioning[the documentation]). The producer `partitionCount` is irrelevant to this process, but is used to provision _new_ topics with a desired number of partitions (ignore this if you are manually creating topics on your broker). The following is a complete configuration for concurrent consumers:
-
-[source,yml]
+[source, yaml]
 ----
 spring:
   cloud:
     stream:
       bindings:
-        producer-out-0:
-          destination: topicname
-          # Used to privision new topics. Omit if topics are manually
-          # configured.
-          partitionCount: 3
-        consumer-in-0:
-          destination: topicname
-          consumer:
-            concurrency: 2
+        myConsumer-in-0:
+          destination: myTopic
     function:
-      definition: producer;consumer
+      definition: myConsumer
 ----
 
-=== Fault Tolerance
+The `myConsumer-in-0` binding configures a binding between our consumer bean named `myConsumer` and the `myTopic` topic. The `function.definition` configuration tells Spring Cloud Function (used by S.C.S) which function bindings are message handlers. When there is only one such binding, this may be elided.
 
-==== Redelivery
+==== 4.a. Competing Concurrent Consumers
 
-In the event of broker failure or application disconnect, recovery falls back on Kafka consumer offsets, which we will summarize based on [<<Kafka>>, pp. 97-99] in this paragraph. Message consumers do not ACK each individual message like is typical for JMS. Instead, consumers have an _offset_ for each partition which tracks the index of the last retrieved message. Consumers periodically _commit_ their current offsets for their partitions to the broker, which saves them persistently. At any time, a consumer's offset may be behind or ahead of the offset of their last successfully _processed_ message, depending on the commit strategy. After a crash or rebalance (the assignment of partitions to consumers which happens as consumers connect and disconnect), consumers retrieve offsets for their partitions from the broker, then start consuming messages. If the last committed offset is _behind_ the most recently retrieved message for a partition (that is, a consumer received some messages but had not yet committed an updated offset prior to a crash), then the broker will re-deliver some messages (the already-delivered message will be delivered again). If the last committed offset was _ahead_ of their last retrieved message (that is, the consumer committed an offset before retrieving messages up to that offset, then crashed), then those messages will never be delivered.
+We can start multiple instances of a consumer by setting the `s.c.s.bindings.<binding>.consumer.group` and `concurrency` configurations. The group sets these consumers to be members of the same consumer group (in a competing-consumer relationship), and the `concurrency` sets the number of consumers to start. Consumers are automatically assigned partitions.
 
-S.C.S. handles offset commits on our behalf. By default, S.C.S. commits offsets after the current batch of retrieved messages is processed. This is governed by the `autoCommitOffset` and `ackEachRecord` parameters. The `autoCommitOffset` defaults to `true`, instructing the framework to commit offsets after messages are processed. The `ackEachRecord` parameter defaults to `false`, instructing S.C.S. to commit offsets only after each _batch_ of messages has been processed rather than after each individual message. See link:https://cloud.spring.io/spring-cloud-stream-binder-kafka/spring-cloud-stream-binder-kafka.html#kafka-consumer-properties[Kafka consumer properties documentation for the Kafka binder] for more information.
+NOTE: The concurrency setting configures the number of consumers _for each_ destination. If a binding subscribes to multiple topics (e.g. `s.c.s.bindings.<binding>.destination=foo,bar`), then a concurrency of `2` starts two consumers for every single destination. If any topic in the list of destinations has fewer partitions than the desired number of consumers, some consumers will simply be idle -- Spring still creates them.
 
-NOTE: S.C.S. does not change the fact that duplicate message delivery is possible in the event of broker or application failure.
+We can confirm that our consumers are concurrent by looking at the name of consumer threads in the logs.
 
-==== Retry
+==== 4.b. Pub-Sub Concurrent Consumers
 
-Message processing failures are handled at multiple levels. Consumer-level error handlers re-process a message multiple times, blocking the consumer thread, until a configured maximum number of attempts (if any). Once the consumer-level error handler is exhausted, the error propagates to the binder-level error handler. The binder-level error handler may re-deliver the failed message to the consumer some configurable number of times. Every time a message is redelivered by the binder-level error handler, the consumer-level error handler takes effect. If and when the binder is exhausted, the messaging system uses a configurable strategy to dispose of the unprocessable message.
+Function bindings in different `group`s do not compete for messages. Consumer groups each get a copy of every message from every partition they subscribe to.
 
-By default, the Kafka binder error handler is the link:https://docs.spring.io/spring-kafka/docs/2.5.1.RELEASE/reference/html/#seek-to-current[Seek-to-current] error handler. This handler commits a new consumer offset whenever error are encountered so that the new offset points to the first erroneous message. This ensures that successfully processed messages are not re-delivered and re-processed. Failed messages, however, are retried immediately up to a maximum of ten times by default. The consumer-level error handler is a Retry Template with a maximum of 3 attempts including the first and a minimum delay of 1 second between each, a maximum delay of 10, and a back-off multiplier of 2.0 between each attempt. Finally, the default messaging-system-level error handler discards unprocessable entities.
+==== 4.c & 4.d. Bounded Retry and Dead Lettering
 
-Therefore, by default, every unprocessable entity may be delivered 3 times at the consumer level and ten times at the binder level for a maximum of 30 times. Since there is a 1s delay until the first re-delivery and a 2s delay to the next, each message takes approximately 3s, and so the whole process will tie a consumer down for around 90s, plus processing overhead, in the worst-case. Such a message is then "discarded" by the broker, which means (_to the best of my understanding_) that the consumer treats the message like a success and commits an offset beyond the erroneous message.
+We can configure Spring's Kafka Listener Container, which is automatically configured with defaults by Spring, to limit redeliveries and publish unprocessable entities to a DLT after exhausting all attempts. See the `Container.java` configuration for an example.
 
-We have configured an "error prone" supplier and consumer processing chain which can be run with the `error-prone-numbers` profile. The configuration is located in the `application-error-prone-numbers.yml` file:
+==== 4.e Prioritized Message Consumption.
 
-[source,yml]
+TODO.
+
+=== 5. Publish to Multiple Topics as a Result of Processing
+
+S.C.S. functions can not, at this time, produce to multiple topics at once. Instead, we have to use `Consumer`s who produce messages via a `StreamBridge` instance See the `consumer` bean in `Bindings` for an example.
+
+==== 5.a. Transacted Publishers
+
+We can configure Spring's Kafka Listener Container, which is automatically configured with defaults by Spring, to create transactional producers for all bindings by using the following application configuration:
+
+[source, yaml]
 ----
-include::src/main/resources/application-error-prone-numbers.yml[]
-----
-
-At the consumer level, we set `maxAttempts: 3` so that the consumer-level error handler will attempt to process any message at most 3 times before sending the error up to the binder. Since we have configured the consumer (under the kafka-specific settings) to use a dead-letter queue, the default seek-to-current error handler skips redelivery and instead flushes the message to the DLQ and moves on. As a result, every message is tried at most 3 times. Using default min, max, and backoff, this may take approximately 3s.
-
-Our program prints the following output:
-
-[source]
-----
-2021-08-22 20:59:24.814  INFO 34911 --- [container-0-C-1] c.g.t.silverbroccoli.ErrorProneHandlers  : Failed to process message: n=1 attempt=1
-2021-08-22 20:59:25.817  INFO 34911 --- [container-0-C-1] c.g.t.silverbroccoli.ErrorProneHandlers  : Failed to process message: n=1 attempt=2
-2021-08-22 20:59:27.818  INFO 34911 --- [container-0-C-1] c.g.t.silverbroccoli.ErrorProneHandlers  : Failed to process message: n=1 attempt=3
-2021-08-22 20:59:27.821 ERROR 34911 --- [container-0-C-1] o.s.integration.handler.LoggingHandler   : org.springframework.messaging.MessageHandlingException: error occurred in message handler [org.springframework.cloud.stream.function.FunctionConfiguration$FunctionToDestinationBinder$1@2bc76821]; nested exception is java.lang.RuntimeException: Kaboom! Failed to process message: n=1, failedMessage=GenericMessage [payload=byte[1], headers={skip-input-type-conversion=false, kafka_offset=1, scst_nativeHeadersPresent=true, kafka_consumer=org.apache.kafka.clients.consumer.KafkaConsumer@4b4c13f0, deliveryAttempt=3, kafka_timestampType=CREATE_TIME, kafka_receivedPartitionId=0, contentType=application/json, kafka_receivedTopic=error-prone-numbers, kafka_receivedTimestamp=1629677429327, kafka_groupId=group1}]
-----
-
-This error message is enqueued to `error.error-prone-numbers.group1`, which we can consume from in the usual way. We have configured a debug consumer to confirm, which shows the DQL `toString()` output for message number 1 (`payload=1`) at offset 1 (`kafka_offset=1`):
-
-[source]
-----
-Found DLQ message: message=GenericMessage [payload=1, headers={x-original-offset=[B@2d84d106, x-original-partition=[B@cba706f, deliveryAttempt=1, kafka_timestampType=CREATE_TIME, kafka_receivedTopic=error.error-prone-numbers.group1, kafka_offset=1, x-exception-message=[B@4f07fe6a, x-exception-fqcn=[B@797d017e, scst_nativeHeadersPresent=true, kafka_consumer=org.apache.kafka.clients.consumer.KafkaConsumer@4c9ce7c7, x-original-topic=[B@72faf3b6, x-original-timestamp-type=[B@2d1ccc8e, id=2a01e567-093b-f13e-c443-944ebe37d7de, kafka_receivedPartitionId=0, contentType=application/json, x-original-timestamp=[B@5d1883e9, kafka_receivedTimestamp=1629681376203, kafka_groupId=anonymous.a8095808-e798-4f24-9c2e-fc417f483b4c, x-exception-stacktrace=[B@4c7f0fc5, timestamp=1629681376262}]
+spring.cloud.stream.kafka:binder:
+          transaction.transaction-id-prefix: 'tx-'
+          required-acks: all
 ----
 
-Note that Kafka encodes values for DLQ entires as byte arrays. I am not sure at time of writing how to change this behavior.
+The transaction-id prefix is used to persistently identify producers (which makes duplicate messages identifiable). The required-acks settings forces producers to wait for all brokers to replicate each message.
 
-=== Monitoring
+Consumers do not respect transaction boundaries by default. We enable transaction isolation on the consumer side as follows:
+
+[source, yaml]
+----
+spring.cloud.stream.bindings:
+  myBinding-in-0:
+    consumer.properties:
+      isolation.level: read_committed
+----
+
+Such a consumer will only read messages from committed transactions (up to the first uncommitted transaction in a partition, known as the Last Stable Offset or LSO).
+
+==== 5.b. Synchronizing Kafka transactions with Database Transactions
+
+We can configure Kafka to commit two separate transactions one after the other. With transactional producers configured, all we have to do next is add a `@transactional` annotation to our unit of work to wrap it in a database transaction as well. Consider the following:
+
+[source, java]
+----
+@Bean
+public Consumer<Event> consumer(TransactedUnitOfWork work) {
+  return work::run;
+}
+
+@Component
+public static class TransactedUnitOfWork {
+
+  private final StreamBridge bridge;
+  private final AuditLogRepository repository;
+
+  @Autowired
+  public TransactedUnitOfWork(StreamBridge bridge, AuditLogRepository repository) {
+    this.bridge = bridge;
+    this.repository = repository;
+  }
+
+  @Transactional
+  public void run(Event event) {
+    bridge.send("left", new Event().message("LEFT: " + event.getMessage()));
+    repository.createIfNotExists(event.getMessage());
+
+    // Simulate a failure to exercise transactions.
+    if (event.getMessage().startsWith("FAIL")) {
+      throw new RuntimeException("Kaboom! Can't process event=" + event);
+    }
+
+    bridge.send("right", new Event().message("RIGHT: " + event.getMessage()));
+  }
+}
+----
+
+Because Spring uses proxies ("interceptors") to start transactions around method calls, we _have_ to register our unit of work as a bean rather than define it as a lambda. Spring has no way to decorate a S.C.Function lambda with a transaction interceptor. As a result, this function binding hardly seems idiomatic, and is definitely unintuitive.
+
+That said, we must be mindful that Kafka _does not_ support XA. In the example above, Spring will try to commit the database transaction first and the kafka transaction second (this is the default). If the database operation fails to commit, both it and the kafka transaction will roll back. If the kafka transaction fails to commit, however, the database transaction _is not_ rolled back. Kafka may redeliver the message in this case, so we may end up trying to persist the same data twice. We should design our database operations to be idempotent as a result.
+
+=== 6. Inspect a DLT
+
+Dead-letter topics are normal topics. We subscribe to DLTs the same as any other.
+
+=== 7. Monitoring & Metrics
 
 Using Spring Boot Actuator we can monitor and control our system through the REST API. At a minimum we need to add actuator and web dependencies to the pom, then set the following properties:
 
@@ -266,13 +278,7 @@ management:
       show-details: always
 ----
 
-==== Health
-
-When we navigate to /actuator/health we can see the topics our application uses along with the Kafka listeners, their state, whether they are paused, and their group IDs.
-
-For more information, see the link:https://docs.spring.io/spring-cloud-stream/docs/current/reference/html/spring-cloud-stream.html#_health_indicator[health indicator documentation].
-
-==== Bindings configuration, control, and status
+When we navigate to /actuator/health we can see the topics our application uses along with the Kafka listeners, their state, whether they are paused, and their group IDs. For more information, see the link:https://docs.spring.io/spring-cloud-stream/docs/current/reference/html/spring-cloud-stream.html#_health_indicator[health indicator documentation].
 
 The /actuator/bindings api gives an overview of effective binding configuration and status. We can  also issue POST requests to control (start, stop, pause, and unpause) those bindings. Bindings which support pausing have the `pausable` flag set to true. For example, the following curl request will pause a consumer:
 
@@ -285,13 +291,9 @@ NOTE: At time of writing, link:https://stackoverflow.com/a/68896149/4816074[cont
 
 For more information, see the link:https://docs.spring.io/spring-cloud-stream/docs/current/reference/html/spring-cloud-stream.html#binding_visualization_control[binding visualization and control documentation].
 
-=== Metrics
-
 Browse to `/actuator/metrics` for a long list of metrics collected by default. For example, `/actuator/metrics/spring.cloud.stream.binder.kafka.offset` measures _consumer lag_, or the number of messages which have been produced to a topic but not yet consumed by a consumer group [<<Kafka>>, pp. 316]. We can use the `?tag=KEY:VALUE` query parameter to filter results down to a specific topic and/or consumer gorup. For example, `/actuator/metrics/spring.cloud.stream.binder.kafka.offset?tag=topic:mytopic&tag=group:mygroup` shows the lag on the `mytopic` topic for the `mygroup` consumer group.
 
-=== Alerting and Debugging
-
-In this section we will review the suggested metrics from [<<Kafka>>, ch. 11]. Bear in mind that most metrics endpoints can be filtered by multiple tags at once for better granularity.
+In the following two sections we will review the suggested metrics from [<<Kafka>>, ch. 11]. Bear in mind that most metrics endpoints can be filtered by multiple tags at once for better granularity.
 
 ==== For the producer
 
@@ -300,15 +302,15 @@ In this section we will review the suggested metrics from [<<Kafka>>, ch. 11]. B
 * The _request-latency-avg_ metric is the average amount of time that a produce request takes. We should generate an alert whenever this value is outside a measured normal for our application. The metric is found at `http://localhost:8081/actuator/metrics/kafka.producer.request.latency.avg`.
 
 * The _request-rate_ metric is the number of produce requests sent to brokers per second. Every request contains one or more batches of messages. The _record-send-rate_ measures the number of messages produced per second as a result of these batches. Finally, the _outgoing-byte-rate_ is the number of bytes overall sent per second. These metrics are available at the following endpoints:
-  ** /actuator/metrics/kafka.producer.request.rate
-  ** /actuator/metrics/kafka.producer.record.send.rate
-  ** /actuator/metrics/kafka.producer.outgoing.byte.rate
+** /actuator/metrics/kafka.producer.request.rate
+** /actuator/metrics/kafka.producer.record.send.rate
+** /actuator/metrics/kafka.producer.outgoing.byte.rate
 
 * The _request-size-avg_ metric describes the average size in bytes of each producer request, which may contain one or more batches for a single topic partition. The average size of each batch is measured by the _batch-size-avg_ metric. The average size of any individual message is measured by _record-size-avg_, again in bytes. The average number of records in a produce request is tracked by _records-per-request-avg_. The following endpoints expose these metrics:
-  ** actuator/metrics/kafka.producer.request.size.avg
-  ** actuator/metrics/kafka.producer.batch.size.avg
-  ** actuator/metrics/kafka.producer.record.size.avg
-  ** actuator/metrics/kafka.producer.records.per.request.avg
+** actuator/metrics/kafka.producer.request.size.avg
+** actuator/metrics/kafka.producer.batch.size.avg
+** actuator/metrics/kafka.producer.record.size.avg
+** actuator/metrics/kafka.producer.records.per.request.avg
 
 *  The _record-queue-time-avg_ is the average amount of time between when a record is ready to be sent to the broker and when it is actually produced, in milliseconds. For context, be aware that when a producer delivers messages to Kafka, it attempts to do so in large batches. Producers will wait until `batch.size` messages are ready to send before producing. Producers will only wait up to `linger.ms` milliseconds, however, at which point they will send whatever messages they already have. The _record-queue-time-avg_ can indicate when the `batch.size` and `linger.ms` configuration of the Kafka producers are effective. This metric is published at `/actuator/metrics/kafka.producer.record.queue.time.avg`.
 
@@ -321,13 +323,23 @@ The consumer metrics we are interested in are all actually "fetch manager" metri
 * We should avoid the _records-lag-max_ metric, which measures consumer lag _only_ for the single worst partition a consumer is working on. Spring provides an alternative, _kafka offset_, which measures the total number of unconsumed messages by topic and/or group. This metric is exposed at `/actuator/metrics/spring.cloud.stream.binder.kafka.offset`.
 
 * The _records-consumed-rate_  measures the number of messages consumed per second by a client. Similarly, the _bytes-consumed-rate_ measure the total number of bytes consumed by a client. These are exposed by the following endpoints:
-  ** /actuator/metrics/kafka.consumer.fetch.manager.records.consumed.rate
-  ** /actuator/metrics/kafka.consumer.fetch.manager.bytes.consumed.rate
+** /actuator/metrics/kafka.consumer.fetch.manager.records.consumed.rate
+** /actuator/metrics/kafka.consumer.fetch.manager.bytes.consumed.rate
 
 * The _fetch-rate_ metric measures the average number of fetch requests made by a consumer per second. The _fetch-size-avg_ measures the average number of bytes of those requests, and the _records-per-request-avg_ gives us the average number of messages per fetch. There _is not_ an equivalent to the producer record-size-average metric by default. The following endpoints expose these data:
-  ** /actuator/metrics/kafka.consumer.fetch.manager.fetch.rate
-  ** /actuator/metrics/kafka.consumer.fetch.manager.fetch.size.avg
-  ** /actuator/metrics/kafka.consumer.fetch.manager.records.per.request.avg
+** /actuator/metrics/kafka.consumer.fetch.manager.fetch.rate
+** /actuator/metrics/kafka.consumer.fetch.manager.fetch.size.avg
+** /actuator/metrics/kafka.consumer.fetch.manager.records.per.request.avg
+
+=== 8. Batch Processing
+
+TODO.
+
+== Kafka Notes
+
+=== Consumer Offsets
+
+In the event of broker failure or application disconnect, recovery falls back on Kafka consumer offsets, which we will summarize based on [<<Kafka>>, pp. 97-99] in this paragraph. Message consumers do not ACK each individual message like is typical for JMS. Instead, consumers have an _offset_ for each partition which tracks the index of the last retrieved message. Consumers periodically _commit_ their current offsets for their partitions to the broker, which saves them persistently. At any time, a consumer's offset may be behind or ahead of the offset of their last successfully _processed_ message, depending on the commit strategy. After a crash or rebalance (the assignment of partitions to consumers which happens as consumers connect and disconnect), consumers retrieve offsets for their partitions from the broker, then start consuming messages. If the last committed offset is _behind_ the most recently retrieved message for a partition (that is, a consumer received some messages but had not yet committed an updated offset prior to a crash), then the broker will re-deliver some messages (the already-delivered message will be delivered again). If the last committed offset was _ahead_ of their last retrieved message (that is, the consumer committed an offset before retrieving messages up to that offset, then crashed), then those messages will never be delivered.
 
 === Transactions, Exactly Once Semantics (EOS), and Idempotence
 
@@ -340,18 +352,6 @@ NOTE: EOS semantics prevent duplicate delivery caused by producer retry. They do
 Stream processing may rely on transactions to guarantee EOS. Transactional processing uses transactions in the familiar way to ensure that a group of actions succeeds or fails atomically. While idempotent producers have a unique producer id which can change when producers restart, transactional producers maintain a consistent producer id that may be used to identify the same producer between restarts. When transactional producers produce messages, they are saved to a partition just like normal messages. By default, consumers read all messages, including uncommitted ones. Consumers may be configured instead to only read _committed_ messages. In this case they rely on the broker to track transaction boundaries within a partition, and in particular to track the position of the _last stable offset (LSO)_, the offset of the first still-open transaction in the partition. Consumers will _only_ consume messages from a partition up to the LSO. If any transaction is uncommitted, it prevents consumers from fetching any later messages, including non-transacted and committed messages, from the same partition. By default, transactions time out after 15 minutes.
 
 WARNING: Kafka _does not_ support XA transactions. In other words, if a message handler successfully commits a database record in a transaction but does not successfully commit a message to Kafka, the database transaction _will not roll back._ For a message producer, this may simply mean our application needs to re-generate the message contents. For a transform function in the middle of a pipeline, though, this may lead to re-delivered messages. We are therefore advised to make all our database operations _idempotent_. When Kafka re-delivers the message our transform failed to consume fully, an idempotent database operation will amount to a no-op if it succeeded the last time we received the message, and so there is no harm done. It is possible, however, that a message may be chronically unprocessable. We may need a way to remove the orphaned database entry (perhaps as a consequence of DLQ processing).
-
-WARNING: The documentation warns that a common producer factory is used for all producer bindings configured using spring.cloud.stream.kafka.binder.transaction.producer.* properties, and therefore individual binding Kafka producer properties are ignored (link:https://docs.spring.io/spring-cloud-stream-binder-kafka/docs/3.0.10.RELEASE/reference/html/spring-cloud-stream-binder-kafka.html#kafka-transactional-binder[source]). This appears to mean that the kafka transactional producer properties _take precedence_, since we are still able to configure partitions and topic retention as normal.
-
-Refer to `TransactionalHandlers.java` for examples of transactional, EOS producers and consumers equipped with retry and DLQ. I could not figure out how to get docker-compose kafka to respect transactions, so this requires you to set up an instance yourself (or integrate with a hosted instance using `local` and `sasl` profiles, which is what I do.) This example also demonstrates an idempotent database interaction using an atomic PostgreSQL query, so you need to start postgresql locally with `docker-compose -f docker-compose-psql.yml up`. JPA does not have a clean way to handle duplicate inserts or unique constraint violations, so we went for native SQL. Research suggests this is the simplest and safest way to achieve atomic, ideompotent inserts.
-
-[source,shell]
-----
-docker-compose -f docker-compose-psql.yml up
-SPRING_PROFILES_ACTIVE=local,sasl,transactional ./mvnw spring-boot:run
-----
-
-This example silences all but com.github.tomboyo logging so we can more easily follow the program as it attempts to process messages. We can also inspect the `audit_log` database table to confirm that the program creates corresponding audit entries whose uniqueness is maintained by the idempotent inserts.
 
 == References
 

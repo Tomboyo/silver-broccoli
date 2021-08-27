@@ -1,4 +1,4 @@
-package com.github.tomboyo.silverbroccoli.txn;
+package com.github.tomboyo.silverbroccoli;
 
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -12,8 +12,6 @@ public interface AuditLogRepository extends CrudRepository<AuditLog, Long> {
   /**
    * Create a new audit log entry if and only if another with the same message does not already
    * exist. This is idempotent.
-   *
-   * @param message
    */
   @Transactional
   @Modifying

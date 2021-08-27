@@ -1,4 +1,4 @@
-package com.github.tomboyo.silverbroccoli.txn;
+package com.github.tomboyo.silverbroccoli;
 
 import javax.persistence.Column;
 import javax.persistence.Entity;

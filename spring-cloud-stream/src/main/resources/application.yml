@@ -1,0 +1,47 @@
+server:
+  port: 8081
+spring:
+  kafka:
+    bootstrap-servers: ${env.kafka.bootstrapservers:localhost}
+  datasource:
+    url: jdbc:postgresql://localhost:5432/sb
+    username: admin
+    password: password
+  cloud:
+    stream:
+      bindings:
+        consumer-in-0:
+          destination: input-high,input-low
+          group: consumerGroup
+          consumer:
+            properties:
+              topic.partitions: 3
+        # Logs every message on every topic.
+        logger-in-0:
+          destination: input-high,input-low,input-high.DLT,input-low.DLT,left,right
+          group: loggerGroup
+          consumer:
+            # Two consumers _per topic_
+            concurrency: 2
+            properties:
+              isolation.level: read_committed
+      # Enable transactional producers.
+      kafka:
+        binder:
+          transaction:
+            transaction-id-prefix: 'tx-'
+          required-acks: all
+    function:
+      definition: consumer;logger
+management:
+  endpoints:
+    web:
+      exposure:
+        include: '*'
+  endpoint:
+    health:
+      show-details: always
+logging:
+  level:
+    root: OFF
+    com.github.tomboyo: INFO

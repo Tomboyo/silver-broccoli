@@ -1,8 +1,4 @@
 spring:
-  kafka:
-    properties:
-      security.protocol: ${env.kafka.securityprotocol}
-      sasl.mechanism: ${env.kafka.saslmechanism}
   cloud:
     stream:
       kafka:
