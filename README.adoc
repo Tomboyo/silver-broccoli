@@ -4,7 +4,7 @@ This project is an evaluation of Apache Kafka and supporting integration librari
 
 Requirements:
 
-. Connect to the instance using SASL and TLS.
+. Connect to the instance securely.
 . Configure two topics (with partitions and replication settings).
 . Produce one or more structured (i.e. from POJOs) messages to each topic on demand. (This should work for any arbitrary stimuli, not just a framework hook.)
 . Consume messages from the topics
@@ -24,7 +24,7 @@ Requirements:
 
 Progress so far:
 
-* [x] Connect to the instance using SASL and TLS.
+* [x] Connect to the instance securely (using SASL and TLS).
 * [x] Configure `input-high`, `input-low`, `input-high.DLT`, `input-low.DLT`, `left`, and `right` topics (with partitions, replication, and retention settings).
 * [x] Produce one or more structured (e.g. JSON via Jackson) messages to `input-high` and `input-low` on demand. (This should work for any arbitrary stimuli, not just a framework hook.)
 * [x] Consume messages from the topics
@@ -352,6 +352,26 @@ NOTE: EOS semantics prevent duplicate delivery caused by producer retry. They do
 Stream processing may rely on transactions to guarantee EOS. Transactional processing uses transactions in the familiar way to ensure that a group of actions succeeds or fails atomically. While idempotent producers have a unique producer id which can change when producers restart, transactional producers maintain a consistent producer id that may be used to identify the same producer between restarts. When transactional producers produce messages, they are saved to a partition just like normal messages. By default, consumers read all messages, including uncommitted ones. Consumers may be configured instead to only read _committed_ messages. In this case they rely on the broker to track transaction boundaries within a partition, and in particular to track the position of the _last stable offset (LSO)_, the offset of the first still-open transaction in the partition. Consumers will _only_ consume messages from a partition up to the LSO. If any transaction is uncommitted, it prevents consumers from fetching any later messages, including non-transacted and committed messages, from the same partition. By default, transactions time out after 15 minutes.
 
 WARNING: Kafka _does not_ support XA transactions. In other words, if a message handler successfully commits a database record in a transaction but does not successfully commit a message to Kafka, the database transaction _will not roll back._ For a message producer, this may simply mean our application needs to re-generate the message contents. For a transform function in the middle of a pipeline, though, this may lead to re-delivered messages. We are therefore advised to make all our database operations _idempotent_. When Kafka re-delivers the message our transform failed to consume fully, an idempotent database operation will amount to a no-op if it succeeded the last time we received the message, and so there is no harm done. It is possible, however, that a message may be chronically unprocessable. We may need a way to remove the orphaned database entry (perhaps as a consequence of DLQ processing).
+
+== 2. Kafka Client
+
+Progress so far:
+
+* [ ] Connect to the instance using OAUTH and TLS.
+* [ ] Configure `input-high`, `input-low`, `input-high.DLT`, `input-low.DLT`, `left`, and `right` topics (with partitions, replication, and retention settings).
+* [ ] Produce one or more structured (e.g. JSON via Jackson) messages to `input-high` and `input-low` on demand. (This should work for any arbitrary stimuli, not just a framework hook.)
+* [ ] Consume messages from the topics
+** [ ] concurrently (in a competing-consumer relationship)
+** [ ] as well as in a pub-sub relationship (e.g. a Logger),
+** [ ] with bounded retry,
+** [ ] and dead-lettering,
+** [ ] such that one topic has priority over the other.
+* [ ] Produce multiple messages to multiple topics as a result of processing one message.
+** [ ] within a transaction
+** [ ] which is synchronized (non-XA) with a database transaction (for an idempotent database operation).
+* [ ] Inspect the dead-letter topic (DLT).
+* [ ] Gather metrics suitable for monitoring (to include everything recommended by [<<Kafka>>, ch. 11]).
+* [ ] Create a batch consumer.
 
 == References
 
