@@ -13,8 +13,7 @@
     <groupId>com.github.tomboyo</groupId>
     <artifactId>silver-broccoli</artifactId>
     <version>0.0.1-SNAPSHOT</version>
-    <name>Silver Broccoli Sandbox Project</name>
-    <description>Evaluation of SCS and RHOAS Apache Kafka</description>
+    <name>Silver Broccoli Sandbox Project (SCS)</name>
 
     <properties>
         <java.version>11</java.version>
