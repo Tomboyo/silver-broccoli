@@ -1,5 +1,6 @@
 .idea/
 target/
+*.iml
 
 # local environment configuration should not be committed.
 config/
