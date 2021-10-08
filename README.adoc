@@ -357,7 +357,7 @@ WARNING: Kafka _does not_ support XA transactions. In other words, if a message 
 
 Progress so far:
 
-* [ ] Connect to the instance using OAUTH and TLS.
+* [x] Connect to the instance using OAUTH and TLS.
 * [ ] Configure `input-high`, `input-low`, `input-high.DLT`, `input-low.DLT`, `left`, and `right` topics (with partitions, replication, and retention settings).
 * [ ] Produce one or more structured (e.g. JSON via Jackson) messages to `input-high` and `input-low` on demand. (This should work for any arbitrary stimuli, not just a framework hook.)
 * [ ] Consume messages from the topics
@@ -372,6 +372,43 @@ Progress so far:
 * [ ] Inspect the dead-letter topic (DLT).
 * [ ] Gather metrics suitable for monitoring (to include everything recommended by [<<Kafka>>, ch. 11]).
 * [ ] Create a batch consumer.
+
+[#2-setup-and-run]
+=== Setup And Run
+
+This project assumes you have an Apache Kafka instance already running, such as hosted at console.redhat.com/beta. We will integrate with the instance using SASL/OAUTH authentication protected by TLS.
+
+To begin, create a `config/application-local.yml` or `application-local.yml` file in the `kafka-client` directory. This file will hold custom environment configuration and secrets which we do not want to commit to the repository. This file is already git-ignored. Add the following required fields:
+
+[source,yml]
+----
+sb:
+  kafka-client:
+    bootstrap.servers: TODO
+    security.protocol: SASL_SSL
+    sasl:
+      mechanism: OAUTHBEARER
+      login.callback.handler.class: io.strimzi.kafka.oauth.client.JaasClientOauthLoginCallbackHandler
+      jaas.config: |
+        org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule required
+        oauth.client.id=TODO
+        oauth.client.secret=TODO
+        oauth.token.endpoint.uri=TODO
+        ;
+----
+
+Make sure to replace all the TODO's with real values, then launch the application:
+
+[source, shell]
+----
+SPRING_PROFILES_ACTIVE=local,sasl ./mvnw spring-boot:run
+----
+
+NOTE: We can set environment variables like `sb.kafka-client.foo=bar` instead of using the local profile. Either way is sufficient.
+
+=== 1. SASL Authentication
+
+We configure the Kafka client to connect securely using SSL and SASL/OAUTHBEARER by setting the properties in the application-local.yml file, whose values are passed along to the KafkaProducer and KafkaConsumer instances (See <<2-setup-and-run,Setup And Run>>).
 
 == References
 
