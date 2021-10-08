@@ -4,3 +4,4 @@ target/
 
 # local environment configuration should not be committed.
 config/
+application-local.*
