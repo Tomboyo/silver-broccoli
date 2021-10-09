@@ -358,7 +358,7 @@ WARNING: Kafka _does not_ support XA transactions. In other words, if a message 
 Progress so far:
 
 * [x] Connect to the instance using OAUTH and TLS.
-* [ ] Configure `input-high`, `input-low`, `input-high.DLT`, `input-low.DLT`, `left`, and `right` topics (with partitions, replication, and retention settings).
+* [x] Configure `input-high`, `input-low`, `input-high.DLT`, `input-low.DLT`, `left`, and `right` topics (with partitions, replication, and retention settings).
 * [ ] Produce one or more structured (e.g. JSON via Jackson) messages to `input-high` and `input-low` on demand. (This should work for any arbitrary stimuli, not just a framework hook.)
 * [ ] Consume messages from the topics
 ** [ ] concurrently (in a competing-consumer relationship)
@@ -409,6 +409,26 @@ NOTE: We can set environment variables like `sb.kafka-client.foo=bar` instead of
 === 1. SASL Authentication
 
 We configure the Kafka client to connect securely using SSL and SASL/OAUTHBEARER by setting the properties in the application-local.yml file, whose values are passed along to the KafkaProducer and KafkaConsumer instances (See <<2-setup-and-run,Setup And Run>>).
+
+=== 2. Configure Topics
+
+We can create and delete topics using `AdminClient#deleteTopics` and `AdminClient#createTopics` respectively. The `NewTopic` type allows us to configure the name, replication factor, and number of partitions for each topic.
+
+[source, java]
+----
+adminClient.deleteTopics(
+    List.of(
+        "foo-topic" // topic name
+));
+
+adminClient.createTopics(
+    List.of(
+        new NewTopic(
+            "foo-topic",      // topic name
+            Optional.empty(), // use the broker's default number of partitions
+            Optional.empty()  // use the broker's default replication factor
+)));
+----
 
 == References
 

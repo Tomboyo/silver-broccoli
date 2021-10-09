@@ -57,29 +57,44 @@ public class Main {
     var adminClient = AdminClient.create(kafkaProps);
 
     return (x) -> {
+      if (env.getProperty("recreate-topics", Boolean.class, false)) {
+        LOGGER.info("Deleting topics");
+        adminClient.deleteTopics(
+            List.of("input-high", "input-low", "input-high.DLT", "input-low.DLT", "left", "right"));
+      }
+
       LOGGER.info("Creating topics");
-      adminClient.createTopics(List.of(new NewTopic("input", Optional.empty(), Optional.empty())));
+      adminClient.createTopics(
+          List.of(
+              new NewTopic("input-high", Optional.empty(), Optional.empty()),
+              new NewTopic("input-low", Optional.empty(), Optional.empty()),
+              new NewTopic("input-high.DLT", Optional.empty(), Optional.empty()),
+              new NewTopic("input-low.DLT", Optional.empty(), Optional.empty()),
+              new NewTopic("left", Optional.empty(), Optional.empty()),
+              new NewTopic("right", Optional.empty(), Optional.empty())));
       LOGGER.info("Topics created. Closing admin client.");
       adminClient.close(Duration.ofMinutes(1));
 
-      Callback callback =
-          (meta, e) -> {
-            if (e != null) {
-              LOGGER.error("Failed to produce message", e);
-            } else {
-              LOGGER.info("offset={} partition={}", meta.offset(), meta.partition());
-            }
-          };
       Stream.of("PASS-1", "FAIL-2", "PASS-3", "FAIL-4")
           .forEach(
               payload -> {
                 LOGGER.info("Producing '{}'", payload);
                 try {
-                  producer.send(new ProducerRecord<>("input", "PASS-1"), callback);
+                  producer.send(new ProducerRecord<>("input-high", "PASS-1"), loggingCallback());
                 } catch (Exception e) {
                   throw new RuntimeException("Failed to produce message " + payload, e);
                 }
               });
+    };
+  }
+
+  private Callback loggingCallback() {
+    return (meta, e) -> {
+      if (e != null) {
+        LOGGER.error("Failed to produce message", e);
+      } else {
+        LOGGER.info("offset={} partition={}", meta.offset(), meta.partition());
+      }
     };
   }
 }
