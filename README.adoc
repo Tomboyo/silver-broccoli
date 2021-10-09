@@ -359,7 +359,7 @@ Progress so far:
 
 * [x] Connect to the instance using OAUTH and TLS.
 * [x] Configure `input-high`, `input-low`, `input-high.DLT`, `input-low.DLT`, `left`, and `right` topics (with partitions, replication, and retention settings).
-* [ ] Produce one or more structured (e.g. JSON via Jackson) messages to `input-high` and `input-low` on demand. (This should work for any arbitrary stimuli, not just a framework hook.)
+* [x] Produce one or more structured (e.g. JSON via Jackson) messages to `input-high` and `input-low` on demand. (This should work for any arbitrary stimuli, not just a framework hook.)
 * [ ] Consume messages from the topics
 ** [ ] concurrently (in a competing-consumer relationship)
 ** [ ] as well as in a pub-sub relationship (e.g. a Logger),
@@ -429,6 +429,10 @@ adminClient.createTopics(
             Optional.empty()  // use the broker's default replication factor
 )));
 ----
+
+=== 3. Produce Structured Messages
+
+Kafka producers communicate messages to the broker as byte arrays. Java objects are converted to byte array format based on the configured `key.serializer` and `value.serializer` classes, which implement the `org.apache.kafka.common.serialization.Serializer` interface [<<Kafka>>, pp. 50]. The kafka client comes with a few default implementations, such as the `StringSerializer` for `String` messages [<<Kafka>>, pp. 50], but for more complex data types we must write our own. For this evaluation we wrote a simpler serializer which writes arbitrary Object instances to byte arrays using the Jackson `ObjectMapper` API. See `com.github.tomboyo.silverbroccoli.kafka.JacksonObjectSerializer` in the `kafka-client` module.
 
 == References
 

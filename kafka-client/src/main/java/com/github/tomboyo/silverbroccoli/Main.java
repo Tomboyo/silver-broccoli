@@ -9,6 +9,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
 import org.springframework.core.env.Environment;
 
@@ -19,6 +20,7 @@ import java.util.Properties;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
 
+@SpringBootApplication
 public class Main {
   public static void main(String[] args) {
     SpringApplication.run(Main.class, args);
@@ -28,30 +30,31 @@ public class Main {
 
   /** Configures shared consumer + producer connection properties */
   private static Consumer<Properties> configurer(Environment env) {
-    return properties -> {
-      Stream.of(
-              "bootstrap.servers",
-              "security.protocol",
-              "sasl.mechanism",
-              "sasl.login.callback.handler.class",
-              "sasl.jaas.config")
-          .forEach(key -> properties.put(key, env.getRequiredProperty("sb.kafka-client." + key)));
-    };
+    return properties ->
+        Stream.of(
+                "bootstrap.servers",
+                "security.protocol",
+                "sasl.mechanism",
+                "sasl.login.callback.handler.class",
+                "sasl.jaas.config")
+            .forEach(key -> properties.put(key, env.getRequiredProperty("sb.kafka-client." + key)));
   }
 
   @Bean
-  public static KafkaProducer<String, String> producer(Environment env) {
+  public static KafkaProducer<String, Object> producer(Environment env) {
     var kafkaProps = new Properties();
     configurer(env).accept(kafkaProps);
 
-    kafkaProps.put("key.serializer", "org.apache.kafka.common.serialization.StringSerializer");
-    kafkaProps.put("value.serializer", "org.apache.kafka.common.serialization.StringSerializer");
+    kafkaProps.put(
+        "key.serializer", "com.github.tomboyo.silverbroccoli.kafka.JacksonObjectSerializer");
+    kafkaProps.put(
+        "value.serializer", "com.github.tomboyo.silverbroccoli.kafka.JacksonObjectSerializer");
 
     return new KafkaProducer<>(kafkaProps);
   }
 
   @Bean
-  public ApplicationRunner runner(Environment env, KafkaProducer<String, String> producer) {
+  public ApplicationRunner runner(Environment env, KafkaProducer<String, Object> producer) {
     var kafkaProps = new Properties();
     configurer(env).accept(kafkaProps);
     var adminClient = AdminClient.create(kafkaProps);
@@ -76,13 +79,14 @@ public class Main {
       adminClient.close(Duration.ofMinutes(1));
 
       Stream.of("PASS-1", "FAIL-2", "PASS-3", "FAIL-4")
+          .map(message -> new Event().message(message))
           .forEach(
-              payload -> {
-                LOGGER.info("Producing '{}'", payload);
+              event -> {
+                LOGGER.info("Producing '{}'", event);
                 try {
-                  producer.send(new ProducerRecord<>("input-high", "PASS-1"), loggingCallback());
+                  producer.send(new ProducerRecord<>("input-high", event), loggingCallback());
                 } catch (Exception e) {
-                  throw new RuntimeException("Failed to produce message " + payload, e);
+                  throw new RuntimeException("Failed to produce message", e);
                 }
               });
     };
