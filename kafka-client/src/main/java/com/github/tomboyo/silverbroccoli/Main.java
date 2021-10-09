@@ -15,10 +15,16 @@ import org.springframework.core.env.Environment;
 
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
+
+import static org.apache.kafka.clients.producer.ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG;
+import static org.apache.kafka.clients.producer.ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG;
+import static org.apache.kafka.common.config.TopicConfig.RETENTION_BYTES_CONFIG;
+import static org.apache.kafka.common.config.TopicConfig.RETENTION_MS_CONFIG;
 
 @SpringBootApplication
 public class Main {
@@ -45,10 +51,12 @@ public class Main {
     var kafkaProps = new Properties();
     configurer(env).accept(kafkaProps);
 
-    kafkaProps.put(
-        "key.serializer", "com.github.tomboyo.silverbroccoli.kafka.JacksonObjectSerializer");
-    kafkaProps.put(
-        "value.serializer", "com.github.tomboyo.silverbroccoli.kafka.JacksonObjectSerializer");
+    kafkaProps.putAll(
+        Map.of(
+            KEY_SERIALIZER_CLASS_CONFIG,
+                "com.github.tomboyo.silverbroccoli.kafka.JacksonObjectSerializer",
+            VALUE_SERIALIZER_CLASS_CONFIG,
+                "com.github.tomboyo.silverbroccoli.kafka.JacksonObjectSerializer"));
 
     return new KafkaProducer<>(kafkaProps);
   }
@@ -69,7 +77,11 @@ public class Main {
       LOGGER.info("Creating topics");
       adminClient.createTopics(
           List.of(
-              new NewTopic("input-high", Optional.empty(), Optional.empty()),
+              new NewTopic("input-high", Optional.empty(), Optional.empty())
+                  .configs(
+                      Map.of(
+                          RETENTION_MS_CONFIG, "60000",
+                          RETENTION_BYTES_CONFIG, "1024")),
               new NewTopic("input-low", Optional.empty(), Optional.empty()),
               new NewTopic("input-high.DLT", Optional.empty(), Optional.empty()),
               new NewTopic("input-low.DLT", Optional.empty(), Optional.empty()),

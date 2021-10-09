@@ -412,7 +412,7 @@ We configure the Kafka client to connect securely using SSL and SASL/OAUTHBEARER
 
 === 2. Configure Topics
 
-We can create and delete topics using `AdminClient#deleteTopics` and `AdminClient#createTopics` respectively. The `NewTopic` type allows us to configure the name, replication factor, and number of partitions for each topic.
+We can create and delete topics using `AdminClient#deleteTopics` and `AdminClient#createTopics` respectively. The `NewTopic` type allows us to configure the name, replication factor, and number of partitions for each topic, as well as set other topic properties using the `config` method. The `TopicConfig` class defines constants for topic configuration names.
 
 [source, java]
 ----
@@ -427,12 +427,17 @@ adminClient.createTopics(
             "foo-topic",      // topic name
             Optional.empty(), // use the broker's default number of partitions
             Optional.empty()  // use the broker's default replication factor
-)));
+        ).config(Map.of(
+            RETENTION_MS_CONFIG, "60000",  // keep messages for 1 minute
+            RETENTION_BYTES_CONFIG, "1024" // keep one kebibyte of messages
+))));
 ----
 
 === 3. Produce Structured Messages
 
 Kafka producers communicate messages to the broker as byte arrays. Java objects are converted to byte array format based on the configured `key.serializer` and `value.serializer` classes, which implement the `org.apache.kafka.common.serialization.Serializer` interface [<<Kafka>>, pp. 50]. The kafka client comes with a few default implementations, such as the `StringSerializer` for `String` messages [<<Kafka>>, pp. 50], but for more complex data types we must write our own. For this evaluation we wrote a simpler serializer which writes arbitrary Object instances to byte arrays using the Jackson `ObjectMapper` API. See `com.github.tomboyo.silverbroccoli.kafka.JacksonObjectSerializer` in the `kafka-client` module.
+
+When configuring producers, take advantage of the `ProducerConfig` and `CommonClientConfig` classes which define constants for property names.
 
 == References
 
