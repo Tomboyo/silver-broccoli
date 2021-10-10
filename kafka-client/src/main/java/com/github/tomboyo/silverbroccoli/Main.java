@@ -1,10 +1,13 @@
 package com.github.tomboyo.silverbroccoli;
 
+import com.github.tomboyo.silverbroccoli.kafka.JacksonObjectSerializer;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.NewTopic;
+import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.Callback;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.common.serialization.StringSerializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.ApplicationRunner;
@@ -18,7 +21,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
-import java.util.function.Consumer;
+import java.util.concurrent.Executors;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static org.apache.kafka.clients.producer.ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG;
@@ -35,39 +40,58 @@ public class Main {
   private static final Logger LOGGER = LoggerFactory.getLogger(Main.class);
 
   /** Configures shared consumer + producer connection properties */
-  private static Consumer<Properties> configurer(Environment env) {
-    return properties ->
-        Stream.of(
-                "bootstrap.servers",
-                "security.protocol",
-                "sasl.mechanism",
-                "sasl.login.callback.handler.class",
-                "sasl.jaas.config")
-            .forEach(key -> properties.put(key, env.getRequiredProperty("sb.kafka-client." + key)));
+  private static Map<String, Object> commonConfig(Environment env) {
+    return Stream.of(
+            "bootstrap.servers",
+            "security.protocol",
+            "sasl.mechanism",
+            "sasl.login.callback.handler.class",
+            "sasl.jaas.config")
+        .collect(
+            Collectors.toMap(
+                Function.identity(), key -> env.getRequiredProperty("sb.kafka-client." + key)));
   }
 
   @Bean
   public static KafkaProducer<String, Object> producer(Environment env) {
     var kafkaProps = new Properties();
-    configurer(env).accept(kafkaProps);
-
+    kafkaProps.putAll(commonConfig(env));
     kafkaProps.putAll(
         Map.of(
-            KEY_SERIALIZER_CLASS_CONFIG,
-                "com.github.tomboyo.silverbroccoli.kafka.JacksonObjectSerializer",
-            VALUE_SERIALIZER_CLASS_CONFIG,
-                "com.github.tomboyo.silverbroccoli.kafka.JacksonObjectSerializer"));
-
+            KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName(),
+            VALUE_SERIALIZER_CLASS_CONFIG, JacksonObjectSerializer.class.getName()));
     return new KafkaProducer<>(kafkaProps);
   }
 
   @Bean
-  public ApplicationRunner runner(Environment env, KafkaProducer<String, Object> producer) {
-    var kafkaProps = new Properties();
-    configurer(env).accept(kafkaProps);
-    var adminClient = AdminClient.create(kafkaProps);
+  public ApplicationRunner consumerInitializer(Environment env) {
+    final var numConsumers = 3;
+    var consumers =
+        Stream.generate(() -> EventConsumers.createKafkaConsumer(commonConfig(env)))
+            .limit(numConsumers)
+            .collect(Collectors.toList());
+    var executor = Executors.newFixedThreadPool(numConsumers);
 
-    return (x) -> {
+    Runtime.getRuntime()
+        .addShutdownHook(
+            new Thread(
+                () -> {
+                  consumers.forEach(KafkaConsumer::wakeup);
+                  executor.shutdown();
+                }));
+
+    return (_x) ->
+        consumers.forEach(
+            consumer ->
+                executor.submit(() -> EventConsumers.run(consumer, EventConsumers.DEFAULT_MAPPER)));
+  }
+
+  @Bean
+  public ApplicationRunner topicInitializer(
+      Environment env, KafkaProducer<String, Object> producer) {
+    var adminClient = AdminClient.create(commonConfig(env));
+
+    return (_x) -> {
       if (env.getProperty("recreate-topics", Boolean.class, false)) {
         LOGGER.info("Deleting topics");
         adminClient.deleteTopics(
