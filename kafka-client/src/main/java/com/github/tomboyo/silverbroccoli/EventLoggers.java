@@ -2,6 +2,7 @@ package com.github.tomboyo.silverbroccoli;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.clients.consumer.RoundRobinAssignor;
 import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.errors.WakeupException;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
@@ -31,6 +32,7 @@ import static org.apache.kafka.clients.consumer.ConsumerConfig.AUTO_OFFSET_RESET
 import static org.apache.kafka.clients.consumer.ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG;
 import static org.apache.kafka.clients.consumer.ConsumerConfig.GROUP_ID_CONFIG;
 import static org.apache.kafka.clients.consumer.ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG;
+import static org.apache.kafka.clients.consumer.ConsumerConfig.PARTITION_ASSIGNMENT_STRATEGY_CONFIG;
 import static org.apache.kafka.clients.consumer.ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG;
 
 @Configuration
@@ -52,6 +54,8 @@ public class EventLoggers {
             "false",
             GROUP_ID_CONFIG,
             "event-consumer-group-1",
+            PARTITION_ASSIGNMENT_STRATEGY_CONFIG,
+            RoundRobinAssignor.class.getName(),
             KEY_DESERIALIZER_CLASS_CONFIG,
             StringDeserializer.class.getName(),
             VALUE_DESERIALIZER_CLASS_CONFIG,
@@ -64,7 +68,7 @@ public class EventLoggers {
   public static ApplicationRunner eventLoggersInitializer(Environment env) {
     return (_args) ->
         startEventLoggers(
-            env.getProperty("sb.event-loggers.consumers", Integer.class, 3),
+            env.getProperty("sb.event-loggers.consumers", Integer.class, 4),
             () -> createKafkaConsumer(env),
             Executors::newFixedThreadPool,
             Runtime.getRuntime());
