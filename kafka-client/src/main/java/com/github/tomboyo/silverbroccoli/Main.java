@@ -1,9 +1,10 @@
 package com.github.tomboyo.silverbroccoli;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.context.annotation.Bean;
+import org.springframework.core.env.Environment;
 
 @SpringBootApplication
 public class Main {
@@ -11,5 +12,11 @@ public class Main {
     SpringApplication.run(Main.class, args);
   }
 
-  private static final Logger LOGGER = LoggerFactory.getLogger(Main.class);
+  @Bean
+  public static ApplicationRunner runner(Environment env) {
+    return (_args) -> {
+      Topics.initializeTopics(env);
+      EventLoggers.initializeEventLoggers(env);
+    };
+  }
 }

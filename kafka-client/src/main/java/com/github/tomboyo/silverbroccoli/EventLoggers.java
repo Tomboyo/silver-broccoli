@@ -9,10 +9,7 @@ import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.boot.ApplicationRunner;
-import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.core.annotation.Order;
 import org.springframework.core.env.Environment;
 
 import java.time.Duration;
@@ -63,15 +60,12 @@ public class EventLoggers {
     return new KafkaConsumer<>(config);
   }
 
-  @Bean
-  @Order(1)
-  public static ApplicationRunner eventLoggersInitializer(Environment env) {
-    return (_args) ->
-        startEventLoggers(
-            env.getProperty("sb.event-loggers.consumers", Integer.class, 4),
-            () -> createKafkaConsumer(env),
-            Executors::newFixedThreadPool,
-            Runtime.getRuntime());
+  public static void initializeEventLoggers(Environment env) {
+    startEventLoggers(
+        env.getProperty("sb.event-loggers.consumers", Integer.class, 4),
+        () -> createKafkaConsumer(env),
+        Executors::newFixedThreadPool,
+        Runtime.getRuntime());
   }
 
   /** Create an application runner responsible for starting EventLogger consumers. */

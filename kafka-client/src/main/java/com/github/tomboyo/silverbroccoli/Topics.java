@@ -9,10 +9,7 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.boot.ApplicationRunner;
-import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.core.annotation.Order;
 import org.springframework.core.env.Environment;
 
 import java.time.Duration;
@@ -59,23 +56,19 @@ public class Topics {
     return new KafkaProducer<>(kafkaProps);
   }
 
-  @Bean
-  @Order(0)
-  public static ApplicationRunner topicInitializer(Environment env) {
-    return (_args) -> {
-      createTopics(
-          LOGGER,
-          env.getProperty("recreate-topics", Boolean.class, false),
-          AdminClient.create(commonKafkaConfig(env)),
-          topics());
+  public static void initializeTopics(Environment env) {
+    createTopics(
+        LOGGER,
+        env.getProperty("recreate-topics", Boolean.class, false),
+        AdminClient.create(commonKafkaConfig(env)),
+        topics());
 
-      produceMessages(
-          List.of("input-high", "input-low"),
-          10,
-          (n) -> (n % 2 == 0 ? "PASS-" : "FAIL-") + n,
-          createKafkaProducer(env),
-          loggingCallback());
-    };
+    produceMessages(
+        List.of("input-high", "input-low"),
+        10,
+        (n) -> (n % 2 == 0 ? "PASS-" : "FAIL-") + n,
+        createKafkaProducer(env),
+        loggingCallback());
   }
 
   public static void createTopics(
