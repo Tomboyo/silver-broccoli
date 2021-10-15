@@ -13,10 +13,11 @@ public class Main {
   }
 
   @Bean
-  public static ApplicationRunner runner(Environment env) {
+  public static ApplicationRunner runner(Environment env, AuditLogRepository repository) {
     return (_args) -> {
       Topics.initializeTopics(env);
       EventLoggers.initializeEventLoggers(env);
+      EventAuditLoggers.initializeAuditLoggers(env, repository);
     };
   }
 }

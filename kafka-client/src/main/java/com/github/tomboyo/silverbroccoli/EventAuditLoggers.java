@@ -1,20 +1,26 @@
 package com.github.tomboyo.silverbroccoli;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.github.tomboyo.silverbroccoli.kafka.JacksonObjectSerializer;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.consumer.RoundRobinAssignor;
+import org.apache.kafka.clients.producer.Callback;
+import org.apache.kafka.clients.producer.KafkaProducer;
+import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.errors.WakeupException;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
+import org.apache.kafka.common.serialization.StringSerializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.Environment;
 
 import java.time.Duration;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Properties;
 import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -27,18 +33,12 @@ import static org.apache.kafka.clients.consumer.ConsumerConfig.GROUP_ID_CONFIG;
 import static org.apache.kafka.clients.consumer.ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG;
 import static org.apache.kafka.clients.consumer.ConsumerConfig.PARTITION_ASSIGNMENT_STRATEGY_CONFIG;
 import static org.apache.kafka.clients.consumer.ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG;
+import static org.apache.kafka.clients.producer.ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG;
+import static org.apache.kafka.clients.producer.ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG;
 
-/**
- * The Event Loggers are Kafka consumers which log each Event instance from the input-low and
- * input-high topics. All event loggers are in the same consumer group, so any Kafka message is
- * handled by at most one event logger (they are "competing consumers"). However, the loggers do not
- * compete for messages with other consumer groups, which each get their own copy of every message
- * the loggers get a copy of.
- */
-@Configuration
-public class EventLoggers {
+public class EventAuditLoggers {
 
-  private static final Logger LOGGER = LoggerFactory.getLogger(EventLoggers.class);
+  private static final Logger LOGGER = LoggerFactory.getLogger(EventAuditLoggers.class);
 
   // TODO: common consumer configuration
   public static final ObjectMapper DEFAULT_MAPPER =
@@ -65,8 +65,19 @@ public class EventLoggers {
     return new KafkaConsumer<>(config);
   }
 
-  public static void initializeEventLoggers(Environment env) {
-    var numConsumers = env.getProperty("sb.event-loggers.consumers", Integer.class, 4);
+  // TODO: duplication
+  private static KafkaProducer<String, Object> createKafkaProducer(Environment env) {
+    var kafkaProps = new Properties();
+    kafkaProps.putAll(commonKafkaConfig(env));
+    kafkaProps.putAll(
+        Map.of(
+            KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName(),
+            VALUE_SERIALIZER_CLASS_CONFIG, JacksonObjectSerializer.class.getName()));
+    return new KafkaProducer<>(kafkaProps);
+  }
+
+  public static void initializeAuditLoggers(Environment env, AuditLogRepository repository) {
+    int numConsumers = env.getProperty("sb.audit-loggers.consumers", Integer.class, 4);
     var consumers =
         Stream.generate(() -> createKafkaConsumer(env))
             .limit(numConsumers)
@@ -80,14 +91,26 @@ public class EventLoggers {
                   executor.shutdown();
                 }));
     consumers.forEach(
-        consumer -> executor.submit(eventLogger(LOGGER, consumer, EventLoggers.DEFAULT_MAPPER)));
+        consumer ->
+            executor.submit(
+                auditLogger(
+                    LOGGER, consumer, createKafkaProducer(env), repository, DEFAULT_MAPPER)));
   }
 
-  public static Runnable eventLogger(
-      Logger logger, KafkaConsumer<String, byte[]> kafkaConsumer, ObjectMapper mapper) {
+  /**
+   * The audit logger persists events as audit logs idempotently, then atomically sends two messages
+   * to the left and right topics. These operations are transactional but not XA, so th DB
+   * transaction may succeed while the Kafka transactions fails.
+   */
+  public static Runnable auditLogger(
+      Logger logger,
+      KafkaConsumer<String, byte[]> kafkaConsumer,
+      KafkaProducer<String, Object> kafkaProducer,
+      AuditLogRepository repository,
+      ObjectMapper mapper) {
     return () -> {
-      logger.info("Event Logger is starting");
-      kafkaConsumer.subscribe(Topics.topicNames().collect(Collectors.toList()));
+      logger.info("Audot logger is starting");
+      kafkaConsumer.subscribe(List.of("input-high", "input-low"));
 
       try {
         while (true) {
@@ -97,7 +120,19 @@ public class EventLoggers {
             var partition = record.partition();
             try {
               var event = mapper.readValue(record.value(), Event.class);
-              logger.info("topic={} partition={} event={}", topic, partition, event);
+              // TODO: transaction for producer!
+              kafkaProducer.send(
+                  new ProducerRecord<>("left", new Event().message("LEFT: " + event.getMessage())));
+              repository.createIfNotExists(event.getMessage());
+
+              if (event.getMessage().toLowerCase().startsWith("fail")) {
+                throw new RuntimeException("Simulated failure!");
+              }
+
+              kafkaProducer.send(
+                  new ProducerRecord<>(
+                      "right", new Event().message("RIGHT: " + event.getMessage())),
+                  loggingCallback());
             } catch (Exception e) {
               logger.warn("Failed to process event: topic={} partition={}", topic, partition, e);
             }
@@ -114,10 +149,20 @@ public class EventLoggers {
       } finally {
         try {
           kafkaConsumer.close();
+          kafkaProducer.close();
           logger.info("Closed kafka consumer");
         } catch (KafkaException e) {
           logger.error("Exception while closing kafka consumer", e);
         }
+      }
+    };
+  }
+
+  // TODO: duplication
+  private static Callback loggingCallback() {
+    return (meta, e) -> {
+      if (e != null) {
+        LOGGER.error("Failed to produce message", e);
       }
     };
   }

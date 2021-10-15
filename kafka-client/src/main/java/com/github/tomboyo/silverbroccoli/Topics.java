@@ -20,6 +20,7 @@ import java.util.Properties;
 import java.util.function.IntFunction;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
+import java.util.stream.Stream;
 
 import static com.github.tomboyo.silverbroccoli.KafkaConfiguration.commonKafkaConfig;
 import static org.apache.kafka.clients.producer.ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG;
@@ -31,6 +32,11 @@ import static org.apache.kafka.common.config.TopicConfig.RETENTION_MS_CONFIG;
 public class Topics {
 
   private static final Logger LOGGER = LoggerFactory.getLogger(Topics.class);
+
+  /** The names of all topics created by this application */
+  public static Stream<String> topicNames() {
+    return topics().stream().map(NewTopic::name);
+  }
 
   private static List<NewTopic> topics() {
     return List.of(
