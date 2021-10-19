@@ -17,7 +17,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
-import java.util.function.IntFunction;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
@@ -70,11 +69,7 @@ public class Topics {
         topics());
 
     produceMessages(
-        List.of("input-high", "input-low"),
-        10,
-        (n) -> (n % 2 == 0 ? "PASS-" : "FAIL-") + n,
-        createKafkaProducer(env),
-        loggingCallback());
+        List.of("input-high", "input-low"), 10, createKafkaProducer(env), loggingCallback());
   }
 
   public static void createTopics(
@@ -96,18 +91,32 @@ public class Topics {
   public static void produceMessages(
       List<String> topics,
       int numMessagesPerTopic,
-      IntFunction<String> messageFactory,
       KafkaProducer<String, Object> producer,
       Callback producerCallback) {
     topics.forEach(
         topic -> {
           IntStream.range(0, numMessagesPerTopic)
-              .mapToObj(messageFactory)
+              .mapToObj(
+                  n -> {
+                    if (n % 2 == 0) {
+                      return "PASS-" + topic + "-" + n;
+                    } else {
+                      return "FAIL-" + topic + "-" + n;
+                    }
+                  })
+              .peek(m -> LOGGER.info("Producing message={}", m))
               .map(new Event()::message)
               // We use the message as a key to distribute messages from our small batch among
               // partitions. The default round-robin doesn't mix messages up much on this scale.
               .map(event -> new ProducerRecord<String, Object>(topic, event.getMessage(), event))
-              .forEach(record -> producer.send(record, producerCallback));
+              .forEach(
+                  record -> {
+                    try {
+                      producer.send(record).get();
+                    } catch (Exception e) {
+                      LOGGER.error("Failed to produce message", e);
+                    }
+                  });
         });
   }
 

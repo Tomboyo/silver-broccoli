@@ -16,8 +16,8 @@ public class Main {
   public static ApplicationRunner runner(Environment env, AuditLogRepository repository) {
     return (_args) -> {
       Topics.initializeTopics(env);
-      EventLoggers.initializeEventLoggers(env);
-      EventAuditLoggers.initializeAuditLoggers(env, repository);
+      //      EventLoggers.initializeEventLoggers(env);
+      AuditLoggers.initializeAuditLoggers(env, repository);
     };
   }
 }
