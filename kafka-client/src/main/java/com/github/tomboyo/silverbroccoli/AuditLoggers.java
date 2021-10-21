@@ -1,17 +1,13 @@
 package com.github.tomboyo.silverbroccoli;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.github.tomboyo.silverbroccoli.kafka.BatchConsumer;
 import com.github.tomboyo.silverbroccoli.kafka.JacksonObjectSerializer;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
-import org.apache.kafka.clients.consumer.KafkaConsumer;
-import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.clients.consumer.RoundRobinAssignor;
 import org.apache.kafka.clients.producer.Callback;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerRecord;
-import org.apache.kafka.common.KafkaException;
-import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.common.errors.WakeupException;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
@@ -20,28 +16,12 @@ import org.slf4j.LoggerFactory;
 import org.springframework.core.env.Environment;
 
 import java.io.IOException;
-import java.time.Duration;
-import java.time.Instant;
-import java.util.ArrayList;
-import java.util.Collection;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Properties;
-import java.util.concurrent.Executors;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.PriorityBlockingQueue;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.Consumer;
-import java.util.function.Function;
-import java.util.stream.Collectors;
-import java.util.stream.StreamSupport;
 
 import static com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES;
 import static com.github.tomboyo.silverbroccoli.KafkaConfiguration.commonKafkaConfig;
-import static java.util.stream.Collectors.counting;
-import static java.util.stream.Collectors.groupingBy;
-import static java.util.stream.Collectors.toMap;
 import static org.apache.kafka.clients.consumer.ConsumerConfig.AUTO_OFFSET_RESET_CONFIG;
 import static org.apache.kafka.clients.consumer.ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG;
 import static org.apache.kafka.clients.consumer.ConsumerConfig.GROUP_ID_CONFIG;
@@ -62,7 +42,7 @@ public class AuditLoggers {
       new ObjectMapper().configure(FAIL_ON_UNKNOWN_PROPERTIES, false);
 
   // TODO: common consumer configuration
-  private static KafkaConsumer<String, byte[]> createKafkaConsumer(Environment env) {
+  private static Map<String, Object> myConsumerConfig(Environment env) {
     var config = new HashMap<String, Object>();
     config.putAll(commonKafkaConfig(env));
     config.putAll(
@@ -81,7 +61,7 @@ public class AuditLoggers {
             StringDeserializer.class.getName(),
             VALUE_DESERIALIZER_CLASS_CONFIG,
             ByteArrayDeserializer.class.getName()));
-    return new KafkaConsumer<>(config);
+    return config;
   }
 
   // TODO: duplication
@@ -96,268 +76,39 @@ public class AuditLoggers {
   }
 
   public static void initializeAuditLoggers(Environment env, AuditLogRepository repository) {
-    int numWorkers = env.getProperty("sb.audit-loggers.workers", Integer.class, 3);
-    LOGGER.info("Starting kafka consumer with {} threaded workers", numWorkers);
-    var consumer = createKafkaConsumer(env);
-    var executor = Executors.newFixedThreadPool(numWorkers + 1);
+    var highWorkers = env.getProperty("sb.audit-loggers.workers", "3");
+    var lowWorkers = env.getProperty("sb.audit-loggers.workers", "2");
+    LOGGER.info("Starting audit workers: high={} low={}", highWorkers, lowWorkers);
 
-    Runtime.getRuntime()
-        .addShutdownHook(
-            new Thread(
-                () -> {
-                  consumer.wakeup();
-                  executor.shutdown();
-                }));
+    // Producers are thread safe.
+    var sharedKafkaProducer = createKafkaProducer(env);
 
-    var buffer = new PriorityKafkaBuffer<String, byte[]>(List.of("input-high", "input-low"), 5, 6);
-    var concurrentConsumer =
-        new ConcurrentKafkaConsumer<>(
-            consumer, List.of("input-high", "input-low"), buffer, Duration.ofMillis(100));
-    executor.submit(concurrentConsumer);
+    // Start input-high consumer and worker pool
+    var highConsumerConf = myConsumerConfig(env);
+    highConsumerConf.putAll(
+        Map.of(BatchConsumer.TOPICS_CONF, "input-high", BatchConsumer.WORKERS_CONF, highWorkers));
+    BatchConsumer.<String, byte[]>start(
+        highConsumerConf, (record) -> handle(record, sharedKafkaProducer, repository));
 
-    for (int i = 0; i < numWorkers; i++) {
-      var worker =
-          new PriorityConsumer<>(
-              buffer,
-              record -> {
-                try {
-                  handle(record, DEFAULT_MAPPER, createKafkaProducer(env), repository);
-                } catch (Exception e) {
-                  // TODO
-                  throw new RuntimeException(e);
-                }
-              });
-      executor.submit(worker);
-    }
-  }
-
-  private static class PriorityKafkaBuffer<K, V> {
-
-    private final ArrayList<String> topics;
-    private final LinkedBlockingQueue<ConsumerRecord<K, V>> acks;
-    private final PriorityBlockingQueue<ConsumerRecord<K, V>> queue;
-    private final Map<String, AtomicInteger> counts;
-    private final int lowWaterMark, highWaterMark;
-
-    public PriorityKafkaBuffer(List<String> topics, int lowWaterMark, int highWaterMark) {
-      if (lowWaterMark <= 0 || highWaterMark <= lowWaterMark) {
-        throw new IllegalArgumentException("Must have 0 <= lowWaterMark < highWaterMark");
-      }
-
-      this.topics = new ArrayList<>(topics);
-      this.acks = new LinkedBlockingQueue<>(highWaterMark);
-      this.queue = new PriorityBlockingQueue<>(highWaterMark, this::compare);
-      this.counts =
-          this.topics.stream().collect(toMap(Function.identity(), _topic -> new AtomicInteger()));
-      this.lowWaterMark = lowWaterMark;
-      this.highWaterMark = highWaterMark;
-    }
-
-    /** Comparator which ranks by topic priority and preserves order by offset within a topic. */
-    private int compare(ConsumerRecord<K, V> a, ConsumerRecord<K, V> b) {
-      var indexA = topics.indexOf(a.topic());
-      var indexB = topics.indexOf(b.topic());
-      if (indexA < 0 || indexB < 0) {
-        throw new IllegalArgumentException("Given illegal topic");
-      }
-      if (indexA < indexB) {
-        return -1;
-      } else {
-        if (indexA == indexB) {
-          var delta = a.offset() - b.offset();
-          if (delta < 0) {
-            return -1;
-          } else if (delta == 0) {
-            return 0;
-          } else {
-            return 1;
-          }
-        } else {
-          return 1;
-        }
-      }
-    }
-
-    public void addAll(Collection<ConsumerRecord<K, V>> records) {
-      var countByTopic = records.stream().collect(groupingBy(ConsumerRecord::topic, counting()));
-      LOGGER.info("AddAll: countByTopic={}", countByTopic);
-      countByTopic.forEach((topic, count) -> counts.get(topic).addAndGet(count.intValue()));
-      queue.addAll(records);
-    }
-
-    public void add(ConsumerRecord<K, V> record) {
-      LOGGER.info(
-          "Add: topic={}, partition={}, offset={}",
-          record.topic(),
-          record.partition(),
-          record.offset());
-      counts.get(record.topic()).incrementAndGet();
-      queue.add(record);
-    }
-
-    public boolean isLow(String topic) {
-      return counts.get(topic).get() <= lowWaterMark;
-    }
-
-    public boolean isHigh(String topic) {
-      return counts.get(topic).get() >= highWaterMark;
-    }
-
-    public ConsumerRecord<K, V> take() throws InterruptedException {
-      var record = queue.take();
-      counts.get(record.topic()).decrementAndGet();
-      return record;
-    }
-
-    public Map<TopicPartition, OffsetAndMetadata> drainAcks() {
-      var tmp = new ArrayList<ConsumerRecord<K, V>>();
-      acks.drainTo(tmp);
-      return tmp.stream()
-          .collect(
-              toMap(
-                  record -> new TopicPartition(record.topic(), record.partition()),
-                  record -> new OffsetAndMetadata(record.offset()),
-                  // Keep highest offset
-                  (a, b) -> a.offset() > b.offset() ? a : b));
-    }
-
-    public void ack(ConsumerRecord<K, V> record) {
-      LOGGER.info(
-          "Ack: topic={} partition={} offset={}",
-          record.topic(),
-          record.partition(),
-          record.offset());
-      acks.add(record);
-    }
-
-    public void nack(ConsumerRecord<K, V> record, Throwable t) {
-      // TODO: handle nacks
-    }
-
-    @Override
-    public String toString() {
-      return "{ queue=" + queue.size() + " acks=" + acks.size() + " }";
-    }
-  }
-
-  public static class ConcurrentKafkaConsumer<K, V> implements Runnable {
-
-    private final KafkaConsumer<K, V> consumer;
-    private final List<String> topics;
-    private final PriorityKafkaBuffer<K, V> buffer;
-    private final Duration commitInterval;
-
-    public ConcurrentKafkaConsumer(
-        KafkaConsumer<K, V> consumer,
-        List<String> topics,
-        PriorityKafkaBuffer<K, V> buffer,
-        Duration commitInterval) {
-      this.consumer = consumer;
-      this.topics = topics;
-      this.buffer = buffer;
-      this.commitInterval = commitInterval;
-    }
-
-    @Override
-    public void run() {
-      consumer.subscribe(topics);
-
-      var commitTimeout = Instant.now().plus(commitInterval);
-
-      try {
-        while (true) {
-          // 1. Offload all new records to the buffer.
-          var records =
-              StreamSupport.stream(consumer.poll(Duration.ofMillis(100)).spliterator(), false)
-                  .collect(Collectors.toList());
-          if (!records.isEmpty()) buffer.addAll(records);
-
-          // 2. Pause or resume topics based on buffer demand.
-          consumer.assignment().stream()
-              .collect(Collectors.groupingBy(TopicPartition::topic))
-              .forEach(
-                  (topic, partitions) -> {
-                    if (buffer.isLow(topic)) {
-                      consumer.resume(partitions);
-                    } else if (buffer.isHigh(topic)) {
-                      consumer.pause(partitions);
-                    }
-                  });
-
-          // 3. Periodically commit buffered Acks.
-          var now = Instant.now();
-          if (commitTimeout.isBefore(now)) {
-            commitTimeout = now.plus(commitInterval);
-
-            var acks = buffer.drainAcks();
-            if (!acks.isEmpty()) {
-              LOGGER.info("Committing: acks={}", acks);
-              consumer.commitAsync(
-                  acks,
-                  (_meta, e) -> {
-                    if (e != null) LOGGER.warn("Failed to commit", e);
-                  });
-            }
-          }
-        }
-      } catch (WakeupException e) {
-        LOGGER.info("Caught request to close kafka consumer");
-        try {
-          var acks = buffer.drainAcks();
-          if (!acks.isEmpty()) {
-            consumer.commitSync(acks);
-          }
-        } catch (Exception e2) {
-          LOGGER.warn("Failed to commit before shutdown", e2);
-        }
-      } finally {
-        try {
-          consumer.close();
-          LOGGER.info("Closed kafka consumer");
-        } catch (KafkaException e) {
-          LOGGER.error("Exception while closing kafka consumer", e);
-        }
-      }
-    }
-  }
-
-  public static class PriorityConsumer<K, V> implements Runnable {
-    private final PriorityKafkaBuffer<K, V> buffer;
-    private final Consumer<ConsumerRecord<K, V>> consumer;
-
-    public PriorityConsumer(
-        PriorityKafkaBuffer<K, V> buffer, Consumer<ConsumerRecord<K, V>> consumer) {
-      this.buffer = buffer;
-      this.consumer = consumer;
-    }
-
-    @Override
-    public void run() {
-      try {
-        while (true) {
-          var record = buffer.take();
-          try {
-            //            consumer.accept(record);
-            Thread.sleep(50);
-            buffer.ack(record);
-          } catch (Exception e) {
-            buffer.nack(record, e);
-          }
-        }
-      } catch (InterruptedException e) {
-        LOGGER.info("Caught interrupt. Exiting priority consumer.");
-      }
-    }
+    // Start input-low consumer and worker pool
+    var lowConsumerConf = myConsumerConfig(env);
+    lowConsumerConf.putAll(
+        Map.of(BatchConsumer.TOPICS_CONF, "input-low", BatchConsumer.WORKERS_CONF, lowWorkers));
+    BatchConsumer.<String, byte[]>start(
+        lowConsumerConf, (record) -> handle(record, sharedKafkaProducer, repository));
   }
 
   private static void handle(
       ConsumerRecord<String, byte[]> record,
-      ObjectMapper mapper,
       KafkaProducer<String, Object> kafkaProducer,
-      AuditLogRepository repository)
-      throws IOException {
+      AuditLogRepository repository) {
     var message = record.value();
-    var event = mapper.readValue(message, Event.class);
+    Event event = null;
+    try {
+      event = DEFAULT_MAPPER.readValue(message, Event.class);
+    } catch (IOException e) {
+      throw new RuntimeException("Failed to deser event", e);
+    }
     LOGGER.info("Processing: event={}", event);
 
     // TODO: transaction for producer!
