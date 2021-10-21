@@ -18,6 +18,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorCompletionService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -54,8 +55,9 @@ public class BatchConsumer<K, V> implements Runnable {
   public static <K, V> void start(
       Map<String, Object> config, Consumer<ConsumerRecord<K, V>> worker) {
     var topics = parseTopics(config);
-    var pollTimeout = parsePollTimeoutMs(config, "100");
     var workers = parseWorkers(config, "3");
+    var pollTimeout = parsePollTimeoutMs(config, "100");
+    LOGGER.info("Starting batch consumer: topics={} workers={}", topics, workers, pollTimeout);
 
     var consumer = new KafkaConsumer<K, V>(config);
     // reserve an extra thread for the kafka consumer.
@@ -131,7 +133,7 @@ public class BatchConsumer<K, V> implements Runnable {
 
         if (batch.isPresent()) {
           if (batch.get().isDone()) {
-            LOGGER.info("Committing batch");
+            LOGGER.info("Committing batch: batch={}", batch.get());
             batch.get().unwrapExceptions();
             consumer.commitAsync();
             consumer.resume(consumer.assignment());
@@ -173,14 +175,18 @@ public class BatchConsumer<K, V> implements Runnable {
     if (futures.isEmpty()) {
       return Optional.empty();
     } else {
-      LOGGER.info("Submitted batch: size={}", futures.size());
-      return Optional.of(new Batch(futures));
+      var batch = new Batch(futures);
+      LOGGER.info("Submitted batch: batch={}", batch);
+      return Optional.of(batch);
     }
   }
 
   private static final class Batch {
 
+    private static final AtomicLong sequence = new AtomicLong();
+
     private final List<Future<Void>> futures;
+    private final long serialId;
 
     private Batch(List<Future<Void>> futures) {
       if (futures.isEmpty()) {
@@ -188,6 +194,7 @@ public class BatchConsumer<K, V> implements Runnable {
       }
 
       this.futures = futures;
+      this.serialId = sequence.getAndIncrement();
     }
 
     public boolean isDone() {
@@ -199,6 +206,11 @@ public class BatchConsumer<K, V> implements Runnable {
       for (var f : futures) {
         f.get();
       }
+    }
+
+    @Override
+    public String toString() {
+      return "Batch{" + " size=\"" + futures.size() + "\" serialId=\"" + serialId + "\" }";
     }
   }
 }

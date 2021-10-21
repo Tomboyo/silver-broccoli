@@ -52,7 +52,7 @@ public class AuditLoggers {
             ENABLE_AUTO_COMMIT_CONFIG,
             "false",
             GROUP_ID_CONFIG,
-            "audit-consumer-group-1",
+            "AuditLoggers",
             MAX_POLL_RECORDS_CONFIG,
             Integer.toString(MAX_RECORDS_PER_POLL),
             PARTITION_ASSIGNMENT_STRATEGY_CONFIG,
