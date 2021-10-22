@@ -57,7 +57,7 @@ public class BatchConsumer<K, V> implements Runnable {
     var topics = parseTopics(config);
     var workers = parseWorkers(config, "3");
     var pollTimeout = parsePollTimeoutMs(config, "100");
-    LOGGER.info("Starting batch consumer: topics={} workers={}", topics, workers, pollTimeout);
+    LOGGER.info("Starting batch consumer: topics={} workers={}", topics, workers);
 
     var consumer = new KafkaConsumer<K, V>(config);
     // reserve an extra thread for the kafka consumer.
