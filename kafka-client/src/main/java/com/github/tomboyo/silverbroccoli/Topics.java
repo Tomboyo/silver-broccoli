@@ -1,12 +1,9 @@
 package com.github.tomboyo.silverbroccoli;
 
-import com.github.tomboyo.silverbroccoli.kafka.JacksonObjectSerializer;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.NewTopic;
-import org.apache.kafka.clients.producer.Callback;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerRecord;
-import org.apache.kafka.common.serialization.StringSerializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Configuration;
@@ -16,14 +13,9 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Properties;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
-import java.util.stream.Stream;
 
-import static com.github.tomboyo.silverbroccoli.KafkaConfiguration.commonKafkaConfig;
-import static org.apache.kafka.clients.producer.ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG;
-import static org.apache.kafka.clients.producer.ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG;
 import static org.apache.kafka.common.config.TopicConfig.RETENTION_BYTES_CONFIG;
 import static org.apache.kafka.common.config.TopicConfig.RETENTION_MS_CONFIG;
 
@@ -31,11 +23,6 @@ import static org.apache.kafka.common.config.TopicConfig.RETENTION_MS_CONFIG;
 public class Topics {
 
   private static final Logger LOGGER = LoggerFactory.getLogger(Topics.class);
-
-  /** The names of all topics created by this application */
-  public static Stream<String> topicNames() {
-    return topics().stream().map(NewTopic::name);
-  }
 
   private static List<NewTopic> topics() {
     return List.of(
@@ -51,25 +38,11 @@ public class Topics {
         new NewTopic("right", Optional.empty(), Optional.empty()));
   }
 
-  private static KafkaProducer<String, Object> createKafkaProducer(Environment env) {
-    var kafkaProps = new Properties();
-    kafkaProps.putAll(commonKafkaConfig(env));
-    kafkaProps.putAll(
-        Map.of(
-            KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName(),
-            VALUE_SERIALIZER_CLASS_CONFIG, JacksonObjectSerializer.class.getName()));
-    return new KafkaProducer<>(kafkaProps);
-  }
-
-  public static void initializeTopics(Environment env) {
+  public static void initializeTopics(
+      Environment env, AdminClient adminClient, KafkaProducer<String, Object> producer) {
     createTopics(
-        LOGGER,
-        env.getProperty("recreate-topics", Boolean.class, false),
-        AdminClient.create(commonKafkaConfig(env)),
-        topics());
-
-    produceMessages(
-        List.of("input-high", "input-low"), 10, createKafkaProducer(env), loggingCallback());
+        LOGGER, env.getProperty("recreate-topics", Boolean.class, false), adminClient, topics());
+    produceMessages(List.of("input-high", "input-low"), 10, producer);
   }
 
   public static void createTopics(
@@ -89,10 +62,7 @@ public class Topics {
   }
 
   public static void produceMessages(
-      List<String> topics,
-      int numMessagesPerTopic,
-      KafkaProducer<String, Object> producer,
-      Callback producerCallback) {
+      List<String> topics, int numMessagesPerTopic, KafkaProducer<String, Object> producer) {
     topics.forEach(
         topic -> {
           IntStream.range(0, numMessagesPerTopic)
@@ -118,13 +88,5 @@ public class Topics {
                     }
                   });
         });
-  }
-
-  private static Callback loggingCallback() {
-    return (meta, e) -> {
-      if (e != null) {
-        LOGGER.error("Failed to produce message", e);
-      }
-    };
   }
 }

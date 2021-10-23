@@ -1,5 +1,7 @@
 package com.github.tomboyo.silverbroccoli;
 
+import org.apache.kafka.clients.admin.AdminClient;
+import org.apache.kafka.clients.producer.KafkaProducer;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -13,11 +15,15 @@ public class Main {
   }
 
   @Bean
-  public static ApplicationRunner runner(Environment env, AuditLogRepository repository) {
+  public static ApplicationRunner runner(
+      Environment env,
+      AdminClient adminClient,
+      KafkaProducer<String, Object> producer,
+      AuditLogRepository repository) {
     return (_args) -> {
-      Topics.initializeTopics(env);
-      EventLoggers.initializeEventLoggers(env);
-      AuditLoggers.initializeAuditLoggers(env, repository);
+      Topics.initializeTopics(env, adminClient, producer);
+      EventLoggers.initialize(env);
+      Auditors.initialize(env, producer, repository);
     };
   }
 }

@@ -1,0 +1,50 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/sb
+    username: admin
+    password: password
+
+logging:
+  level:
+    root: OFF
+    com.github.tomboyo.silverbroccoli: INFO
+
+sb:
+  kafka.producer:
+    key.serializer: org.apache.kafka.common.serialization.StringSerializer
+    value.serializer: com.github.tomboyo.silverbroccoli.kafka.JacksonObjectSerializer
+  event.loggers:
+    topics: input-high, input-low, input-high.DLT, input-low.DLT, left, right
+    workers: 2
+    kafka.consumer:
+      auto.offset.reset: earliest
+      enable.auto.commit: false
+      group.id: EventLoggers
+      partition.assignment.strategy: org.apache.kafka.clients.consumer.RoundRobinAssignor
+      key.deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value.deserializer: org.apache.kafka.common.serialization.ByteArrayDeserializer
+  auditors.high.priority:
+    topics: input-high
+    workers: 3
+    # TODO: batch.size (alias of max.poll.records)
+    # TODO: enforce enable.auto.commit
+    kafka.consumer:
+      auto.offset.reset: earliest
+      enable.auto.commit: false
+      group.id: Auditors
+      max.poll.records: 5
+      partition.assignment.strategy: org.apache.kafka.clients.consumer.RoundRobinAssignor
+      key.deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value.deserializer: org.apache.kafka.common.serialization.ByteArrayDeserializer
+  auditors.low.priority:
+    topics: input-low
+    workers: 2
+    kafka.consumer:
+      auto.offset.reset: earliest
+      enable.auto.commit: false
+      group.id: Auditors
+      max.poll.records: 5
+      partition.assignment.strategy: org.apache.kafka.clients.consumer.RoundRobinAssignor
+      key.deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value.deserializer: org.apache.kafka.common.serialization.ByteArrayDeserializer
+

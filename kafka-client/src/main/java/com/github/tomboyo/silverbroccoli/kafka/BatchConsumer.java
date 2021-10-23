@@ -7,6 +7,7 @@ import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.errors.WakeupException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.core.env.Environment;
 
 import java.time.Duration;
 import java.util.Arrays;
@@ -24,23 +25,19 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 
-// 1. Because tasks may take a variable amount of time to process and could block the poll loop,
-//    tasks should be processed in a separate thread.
-// 2. Retry logic should be configured in this consumer to insulate business logic,
-// 3. The consumer does not try to prioritize between topics. The application or control plane
-//    should start more consumers based on demand.
-// (4?) Consider moving message deserialization to the consumer as well. And deser failure should go
-// directly to DLT.
-// TODO: a rebalance listener should empty all pending tasks to avoid duplicate work. As long as
-// tasks are idmepotent, however, this isn't a big deal.
+import static com.github.tomboyo.silverbroccoli.ConfigurationSupport.composeConfigs;
+import static com.github.tomboyo.silverbroccoli.ConfigurationSupport.extractMap;
+import static com.github.tomboyo.silverbroccoli.KafkaConfiguration.kafkaPropertyNames;
+import static java.lang.String.join;
 
 public class BatchConsumer<K, V> implements Runnable {
 
   private static final Logger LOGGER = LoggerFactory.getLogger(BatchConsumer.class);
 
-  public static final String TOPICS_CONF = "sb.topics";
-  public static final String WORKERS_CONF = "sb.workers";
-  public static final String POLL_TIMEOUT_CONF = "sb.poll.timeout";
+  public static final String TOPICS_CONF = "topics";
+  public static final String WORKERS_CONF = "workers";
+  public static final String POLL_TIMEOUT_CONF = "poll.timeout";
+  private static final String KAFKA_CONF = "kafka.consumer";
 
   private final KafkaConsumer<K, V> consumer;
   private final List<String> topics;
@@ -51,22 +48,41 @@ public class BatchConsumer<K, V> implements Runnable {
   /**
    * Create and start a consumer. The worker must be stateless and thread safe, since it will
    * process all messages on multiple threads.
+   *
+   * <p>Reads common configuration from "sb.kafka.common". Reads additional properties under the
+   * given localConfigPrefix, including "...kafka.consumer" properties which override the common
+   * configuration. In other words, every batch consumer reads shared common configuration from a
+   * well-known location, and private (overriding) configuration from a given root.
    */
   public static <K, V> void start(
-      Map<String, Object> config, Consumer<ConsumerRecord<K, V>> worker) {
-    var topics = parseTopics(config);
-    var workers = parseWorkers(config, "3");
-    var pollTimeout = parsePollTimeoutMs(config, "100");
-    LOGGER.info("Starting batch consumer: topics={} workers={}", topics, workers);
+      Environment env, String localConfigPrefix, Consumer<ConsumerRecord<K, V>> worker) {
+    var local =
+        extractMap(
+            env,
+            localConfigPrefix,
+            List.of(TOPICS_CONF, WORKERS_CONF, POLL_TIMEOUT_CONF, KAFKA_CONF));
+    var topics = parseTopics(local);
+    var workers = parseWorkers(local, "3");
+    var pollTimeout = parsePollTimeoutMs(local, "100");
 
-    var consumer = new KafkaConsumer<K, V>(config);
+    LOGGER.info(
+        "Starting batch consumer: config={} topics={} workers={}",
+        localConfigPrefix,
+        topics,
+        workers);
+
+    var common = extractMap(env, "sb.kafka.common", kafkaPropertyNames());
+    var localKafka =
+        extractMap(env, join(".", localConfigPrefix, KAFKA_CONF), kafkaPropertyNames());
+    var consumer = new KafkaConsumer<K, V>(composeConfigs(List.of(common, localKafka)));
+
     // reserve an extra thread for the kafka consumer.
     var executor = Executors.newFixedThreadPool(workers + 1);
     executor.submit(
         new BatchConsumer<>(
             consumer,
             topics,
-            new ExecutorCompletionService<Void>(executor),
+            new ExecutorCompletionService<>(executor),
             (record) ->
                 () -> {
                   worker.accept(record);
@@ -146,14 +162,14 @@ public class BatchConsumer<K, V> implements Runnable {
         }
       }
     } catch (InterruptedException | WakeupException e) {
-      // InterruptedException may come from the worker.poll().get() call because the underlying
-      // executor has shut down. We must stop immediately in this case to avoid committing past
-      // unprocessed elements.
+      // InterruptedException may come from the batch.get().unwrapExceptions() call because the
+      // underlying executor has shut down. We must stop immediately in this case to avoid
+      // committing past unprocessed elements.
       LOGGER.info("Caught normal request to shut down. Pending messages will not be committed.");
     } catch (ExecutionException e) {
-      // ExecutionException may come from the worker.poll().get() call because of an unexpected
-      // runtime exception in the worker thread. We must shut down in the case to avoid committing
-      // past unprocessed elements. This error constitutes an urgent bug.
+      // ExecutionException may come from the batch.get().unwrapExceptions() call because of an
+      // unexpected runtime exception in the worker thread. We must stop immediately in this case to
+      // avoid committing past unprocessed elements. This error constitutes an urgent bug.
       LOGGER.info(
           "Shutting down due to unexpected processing exception. Pending messages will not be committed.");
       throw new RuntimeException("Unexpected processing error", e);
