@@ -365,7 +365,7 @@ Progress so far:
 ** [ ] as well as in a pub-sub relationship (e.g. a Logger),
 ** [x] with bounded retry,
 ** [ ] and dead-lettering,
-** [ ] such that one topic has priority over the other.
+** [x] such that one topic has priority over the other.
 * [ ] Produce multiple messages to multiple topics as a result of processing one message.
 ** [ ] within a transaction
 ** [ ] which is synchronized (non-XA) with a database transaction (for an idempotent database operation).
