@@ -3,6 +3,8 @@ package com.github.tomboyo.silverbroccoli.kafka;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.clients.producer.KafkaProducer;
+import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.errors.WakeupException;
 import org.slf4j.Logger;
@@ -28,16 +30,38 @@ import java.util.stream.StreamSupport;
 import static com.github.tomboyo.silverbroccoli.ConfigurationSupport.composeConfigs;
 import static com.github.tomboyo.silverbroccoli.ConfigurationSupport.extractMap;
 import static com.github.tomboyo.silverbroccoli.KafkaConfiguration.kafkaPropertyNames;
+import static java.lang.String.format;
 import static java.lang.String.join;
+import static java.util.Objects.requireNonNull;
 
+// TODO: make DLT optional (for consumers like Loggers, where failure is undesirable but not
+// severe.)
 public class BatchConsumer<K, V> implements Runnable {
 
   private static final Logger LOGGER = LoggerFactory.getLogger(BatchConsumer.class);
 
-  public static final String TOPICS_CONF = "topics";
-  public static final String WORKERS_CONF = "workers";
-  public static final String POLL_TIMEOUT_CONF = "poll.timeout";
-  private static final String KAFKA_CONF = "kafka.consumer";
+  public enum Conf {
+    TOPICS("topics"),
+    DLT("dlt"),
+    WORKERS("workers"),
+    POLL_TIMEOUT("poll.timeout.ms"),
+    MAX_ATTEMPTS("max.attempts"),
+    KAFKA_CONSUMER("kafka.consumer");
+
+    private final String value;
+
+    Conf(String value) {
+      this.value = value;
+    }
+
+    public String value() {
+      return value;
+    }
+
+    public static List<String> allConfs() {
+      return Arrays.stream(Conf.values()).map(Conf::value).collect(Collectors.toList());
+    }
+  }
 
   private final KafkaConsumer<K, V> consumer;
   private final List<String> topics;
@@ -55,15 +79,16 @@ public class BatchConsumer<K, V> implements Runnable {
    * well-known location, and private (overriding) configuration from a given root.
    */
   public static <K, V> void start(
-      Environment env, String localConfigPrefix, Consumer<ConsumerRecord<K, V>> worker) {
-    var local =
-        extractMap(
-            env,
-            localConfigPrefix,
-            List.of(TOPICS_CONF, WORKERS_CONF, POLL_TIMEOUT_CONF, KAFKA_CONF));
+      Environment env,
+      KafkaProducer<String, Object> producer,
+      String localConfigPrefix,
+      Consumer<ConsumerRecord<K, V>> worker) {
+    var local = extractMap(env, localConfigPrefix, Conf.allConfs());
     var topics = parseTopics(local);
     var workers = parseWorkers(local, "3");
     var pollTimeout = parsePollTimeoutMs(local, "100");
+    var maxAttempts = parseMaxAttempts(local, "3");
+    var dlt = parseDlt(local);
 
     LOGGER.info(
         "Starting batch consumer: config={} topics={} workers={}",
@@ -71,10 +96,11 @@ public class BatchConsumer<K, V> implements Runnable {
         topics,
         workers);
 
-    var common = extractMap(env, "sb.kafka.common", kafkaPropertyNames());
-    var localKafka =
-        extractMap(env, join(".", localConfigPrefix, KAFKA_CONF), kafkaPropertyNames());
-    var consumer = new KafkaConsumer<K, V>(composeConfigs(List.of(common, localKafka)));
+    var commonConf = extractMap(env, "sb.kafka.common", kafkaPropertyNames());
+    var localConsumerConf =
+        extractMap(
+            env, join(".", localConfigPrefix, Conf.KAFKA_CONSUMER.value), kafkaPropertyNames());
+    var consumer = new KafkaConsumer<K, V>(composeConfigs(List.of(commonConf, localConsumerConf)));
 
     // reserve an extra thread for the kafka consumer.
     var executor = Executors.newFixedThreadPool(workers + 1);
@@ -83,11 +109,7 @@ public class BatchConsumer<K, V> implements Runnable {
             consumer,
             topics,
             new ExecutorCompletionService<>(executor),
-            (record) ->
-                () -> {
-                  worker.accept(record);
-                  return null;
-                },
+            new BoundedRetryWorker<>(producer, maxAttempts, dlt, worker),
             pollTimeout));
 
     Runtime.getRuntime()
@@ -100,30 +122,43 @@ public class BatchConsumer<K, V> implements Runnable {
   }
 
   private static List<String> parseTopics(Map<String, Object> config) {
-    return Arrays.stream(((String) config.get(TOPICS_CONF)).split(","))
-        .map(String::trim)
-        .collect(Collectors.toList());
+    var rawTopics =
+        requireNonNull(((String) config.get(Conf.TOPICS.value)), "topics configuration required");
+    return Arrays.stream(rawTopics.split(",")).map(String::trim).collect(Collectors.toList());
   }
 
   private static Duration parsePollTimeoutMs(Map<String, Object> config, String defaultValue) {
-    String millis = (String) config.getOrDefault(POLL_TIMEOUT_CONF, defaultValue);
+    String millis = (String) config.getOrDefault(Conf.POLL_TIMEOUT.value, defaultValue);
     return Duration.ofMillis(Long.parseLong(millis));
   }
 
   private static int parseWorkers(Map<String, Object> config, String defaultValue) {
-    return Integer.parseInt((String) config.getOrDefault(WORKERS_CONF, defaultValue));
+    return Integer.parseInt((String) config.getOrDefault(Conf.WORKERS.value, defaultValue));
+  }
+
+  private static int parseMaxAttempts(Map<String, Object> config, String defaultValue) {
+    return Integer.parseInt((String) config.getOrDefault(Conf.MAX_ATTEMPTS.value, defaultValue));
+  }
+
+  private static String parseDlt(Map<String, Object> config) {
+    return requireNonNull(((String) config.get(Conf.DLT.value)), "dlt configuration required");
   }
 
   public BatchConsumer(
       KafkaConsumer<K, V> consumer,
       List<String> topics,
       ExecutorCompletionService<Void> workers,
-      Function<ConsumerRecord<K, V>, Callable<Void>> createTask,
+      Consumer<ConsumerRecord<K, V>> worker,
       Duration pollTimeout) {
     this.consumer = consumer;
     this.topics = topics;
     this.workers = workers;
-    this.createTask = createTask;
+    this.createTask =
+        (record) ->
+            () -> {
+              worker.accept(record);
+              return null;
+            };
     this.pollTimeout = pollTimeout;
   }
 
@@ -194,6 +229,65 @@ public class BatchConsumer<K, V> implements Runnable {
       var batch = new Batch(futures);
       LOGGER.info("Submitted batch: batch={}", batch);
       return Optional.of(batch);
+    }
+  }
+
+  private static final class BoundedRetryWorker<K, V> implements Consumer<ConsumerRecord<K, V>> {
+    private final KafkaProducer<?, Object> producer;
+    private final int maxAttempts;
+    private final String dlt;
+    private final Consumer<ConsumerRecord<K, V>> delegate;
+
+    public BoundedRetryWorker(
+        KafkaProducer<?, Object> producer,
+        int maxAttempts,
+        String dlt,
+        Consumer<ConsumerRecord<K, V>> delegate) {
+      this.producer = producer;
+      this.maxAttempts = maxAttempts;
+      this.dlt = dlt;
+      this.delegate = delegate;
+    }
+
+    @Override
+    public void accept(ConsumerRecord<K, V> record) {
+      // TODO: store this number in a task database. Increment it before processing to protect
+      // against unrecoverable errors like OOME. Alternatively, use a kafka topic to track attempts.
+      // We will skip implementation for this project because we've done something like this before
+      // and are confident it works.
+      var attempt = 0;
+
+      while (++attempt < maxAttempts) {
+        try {
+          delegate.accept(record);
+          return;
+        } catch (Exception e) {
+          LOGGER.warn(
+              "Failed attempt: attempt={} maxAttempts={} record=\"{}\"",
+              attempt,
+              maxAttempts,
+              record,
+              e);
+        }
+      }
+
+      // Synchronously send the record to a DLT or fail.
+      try {
+        LOGGER.error(
+            "Publishing unprocessable record to DLT: maxAttempts={} DLT={} record=\"{}\"",
+            maxAttempts,
+            dlt,
+            record);
+        producer.send(new ProducerRecord<>(dlt, record)).get();
+      } catch (Exception e) {
+        // Failure to DLT a record constitutes a serious error. The consumer will shut down to avoid
+        // committing over an unprocessed entity. When the application restarts, we will try to
+        // process or DLT the message again.
+        throw new RuntimeException(
+            format(
+                "Unable to publish unprocessable record to DLT: maxAttempts=%s DLT=%s record=\"%s\"",
+                maxAttempts, record, dlt));
+      }
     }
   }
 

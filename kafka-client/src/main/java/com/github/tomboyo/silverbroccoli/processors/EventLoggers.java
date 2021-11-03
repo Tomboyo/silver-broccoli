@@ -1,8 +1,10 @@
-package com.github.tomboyo.silverbroccoli;
+package com.github.tomboyo.silverbroccoli.processors;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.github.tomboyo.silverbroccoli.Event;
 import com.github.tomboyo.silverbroccoli.kafka.BatchConsumer;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.clients.producer.KafkaProducer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Configuration;
@@ -28,8 +30,8 @@ public class EventLoggers {
   public static final ObjectMapper DEFAULT_MAPPER =
       new ObjectMapper().configure(FAIL_ON_UNKNOWN_PROPERTIES, false);
 
-  public static void initialize(Environment env) {
-    BatchConsumer.start(env, "sb.event.loggers", EventLoggers::handler);
+  public static void initialize(Environment env, KafkaProducer<String, Object> producer) {
+    BatchConsumer.start(env, producer, "sb.event.loggers", EventLoggers::handler);
   }
 
   private static void handler(ConsumerRecord<String, byte[]> record) {

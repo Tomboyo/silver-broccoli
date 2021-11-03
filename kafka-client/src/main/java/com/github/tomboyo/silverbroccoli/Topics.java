@@ -42,7 +42,7 @@ public class Topics {
       Environment env, AdminClient adminClient, KafkaProducer<String, Object> producer) {
     createTopics(
         LOGGER, env.getProperty("recreate-topics", Boolean.class, false), adminClient, topics());
-    produceMessages(List.of("input-high", "input-low"), 10, producer);
+    produceMessages(List.of("input-high", "input-low"), 3, producer);
   }
 
   public static void createTopics(

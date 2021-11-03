@@ -14,8 +14,11 @@ sb:
     key.serializer: org.apache.kafka.common.serialization.StringSerializer
     value.serializer: com.github.tomboyo.silverbroccoli.kafka.JacksonObjectSerializer
   event.loggers:
-    topics: input-high, input-low, input-high.DLT, input-low.DLT, left, right
+    topics: input-high, input-low, input-high.DLT, input-low.DLT, left, right, other.DLT
+    dlt: other.DLT
     workers: 2
+    # poll.timeout.ms: 100
+    # max.attempts: 3
     kafka.consumer:
       auto.offset.reset: earliest
       enable.auto.commit: false
@@ -25,6 +28,7 @@ sb:
       value.deserializer: org.apache.kafka.common.serialization.ByteArrayDeserializer
   auditors.high.priority:
     topics: input-high
+    dlt: input-high.DLT
     workers: 3
     # TODO: batch.size (alias of max.poll.records)
     # TODO: enforce enable.auto.commit
@@ -38,6 +42,7 @@ sb:
       value.deserializer: org.apache.kafka.common.serialization.ByteArrayDeserializer
   auditors.low.priority:
     topics: input-low
+    dlt: input-low.DLT
     workers: 2
     kafka.consumer:
       auto.offset.reset: earliest

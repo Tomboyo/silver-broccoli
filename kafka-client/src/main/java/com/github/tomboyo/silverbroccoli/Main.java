@@ -1,5 +1,7 @@
 package com.github.tomboyo.silverbroccoli;
 
+import com.github.tomboyo.silverbroccoli.processors.Auditors;
+import com.github.tomboyo.silverbroccoli.processors.EventLoggers;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.springframework.boot.ApplicationRunner;
@@ -22,7 +24,7 @@ public class Main {
       AuditLogRepository repository) {
     return (_args) -> {
       Topics.initializeTopics(env, adminClient, producer);
-      EventLoggers.initialize(env);
+      EventLoggers.initialize(env, producer);
       Auditors.initialize(env, producer, repository);
     };
   }

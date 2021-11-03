@@ -12,7 +12,7 @@ Requirements:
   .. as well as in a pub-sub relationship,
   .. with bounded retry,
   .. and dead-lettering,
-  .. such that one topic has priority over the other.
+  .. such that one topic has priority over the other. footnote:[Our real-world use case is to process the most urgent messages within a small time-frame, and least urgent messages within a larger time-frame. However, all messages must be processed within their respective time frames. As a result, this is less about "priority" and more about relative throughput.]
 . Produce multiple messages as a result of processing to two different topics
   .. within a transaction
   .. which is synchronized (non-XA) with a database transaction (for an idempotent database operation).
@@ -438,6 +438,20 @@ adminClient.createTopics(
 Kafka producers communicate messages to the broker as byte arrays. Java objects are converted to byte array format based on the configured `key.serializer` and `value.serializer` classes, which implement the `org.apache.kafka.common.serialization.Serializer` interface [<<Kafka>>, pp. 50]. The kafka client comes with a few default implementations, such as the `StringSerializer` for `String` messages [<<Kafka>>, pp. 50], but for more complex data types we must write our own. For this evaluation we wrote a simpler serializer which writes arbitrary Object instances to byte arrays using the Jackson `ObjectMapper` API. See `com.github.tomboyo.silverbroccoli.kafka.JacksonObjectSerializer` in the `kafka-client` module.
 
 When configuring producers, take advantage of the `ProducerConfig` and `CommonClientConfig` classes which define constants for property names.
+
+=== 4. Consume Messages
+
+==== 4.5 Message Prioritization
+
+As mentioned earlier, our real-world requirement is not to ensure that messages are processed in order fo priority, but to ensure that messages can be divided up into different service levels, where "more urgent" messages are processed within a shorter time-frame than "less urgent" messages.
+
+That said, for completeness we note that Kafka does not natively support message prioritization within a topic. However, we do not need it to. Our real-world use case involves a small number of unchanging priority levels. We can easily model this by using distinct topics per priority level, and scaling the number of consumers per topic. This allows us to tune throughput of each message priority independently of the others, even automatically in response to unexpected load or latency.
+
+The simplest method, and the one we propose, is to create consumers one-to-one with topics, deployed as independent services (e.g. kubernetes containers), and scale the number of services at runtime using operational tooling (e.g. the OpenShift UI). This allows us to accomodate arbitrary load both automatically and at a granular level. The implementation is the simplest of those we will metnion below.
+
+The second method is to use the the link:https://github.com/riferrei/bucket-priority-pattern[bucket priority pattern]. This routes messages by-priority to a specific collection of partitions, where more-urgent messages are routed to collections with a larger number of partitions. As a result, consumers subscribed to many partitions are more likely to consume high-priority messages as long as there are any. The priority of messages is controlled by the relative proportion of partitions within each priority level. This offers less control over throughput than the above solution, and doesn't seem to have any obvious advantages.
+
+Finally, applications can re-sequence messages in-memory using consumers subscribed to multiple priority topics. In brief, this leads to a complex design overall, and runs the risk of completely blocking low-priority topics so long as a small but consistent number of high-priority messages arrive. While this allows the system to automatically assign resources to the most important messages, it introduces systemic risk and is inappropriate for the problem of _n_ separate SLAs by priority.
 
 == References
 

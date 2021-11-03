@@ -1,6 +1,8 @@
-package com.github.tomboyo.silverbroccoli;
+package com.github.tomboyo.silverbroccoli.processors;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.github.tomboyo.silverbroccoli.AuditLogRepository;
+import com.github.tomboyo.silverbroccoli.Event;
 import com.github.tomboyo.silverbroccoli.kafka.BatchConsumer;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.producer.Callback;
@@ -25,9 +27,15 @@ public class Auditors {
   public static void initialize(
       Environment env, KafkaProducer<String, Object> producer, AuditLogRepository repository) {
     BatchConsumer.<String, byte[]>start(
-        env, "sb.auditors.high.priority", (record) -> handle(record, producer, repository));
+        env,
+        producer,
+        "sb.auditors.high.priority",
+        (record) -> handle(record, producer, repository));
     BatchConsumer.<String, byte[]>start(
-        env, "sb.auditors.low.priority", (record) -> handle(record, producer, repository));
+        env,
+        producer,
+        "sb.auditors.low.priority",
+        (record) -> handle(record, producer, repository));
   }
 
   private static void handle(
@@ -48,9 +56,9 @@ public class Auditors {
         new ProducerRecord<>("left", new Event().message("LEFT: " + event.getMessage())));
     repository.createIfNotExists(event.getMessage());
 
-    //    if (event.getMessage().toLowerCase().startsWith("fail")) {
-    //      throw new RuntimeException("Simulated failure!");
-    //    }
+    if (event.getMessage().toLowerCase().startsWith("fail")) {
+      throw new RuntimeException("Simulated failure!");
+    }
 
     kafkaProducer.send(
         new ProducerRecord<>("right", new Event().message("RIGHT: " + event.getMessage())),
