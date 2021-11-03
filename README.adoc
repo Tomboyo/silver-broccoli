@@ -363,7 +363,7 @@ Progress so far:
 * [ ] Consume messages from the topics
 ** [ ] concurrently (in a competing-consumer relationship)
 ** [ ] as well as in a pub-sub relationship (e.g. a Logger),
-** [ ] with bounded retry,
+** [x] with bounded retry,
 ** [ ] and dead-lettering,
 ** [ ] such that one topic has priority over the other.
 * [ ] Produce multiple messages to multiple topics as a result of processing one message.
@@ -440,6 +440,12 @@ Kafka producers communicate messages to the broker as byte arrays. Java objects 
 When configuring producers, take advantage of the `ProducerConfig` and `CommonClientConfig` classes which define constants for property names.
 
 === 4. Consume Messages
+
+==== 4.3 Bounded Retry
+
+We achieve bounded retry by tracking number of attempts before processing a message. If that number of attempts exceeds a threshold, we skip the message (that is, commit past it). The implementation may choose to submit the message to a DLT, log an error, or proceed silently dependeing on requirements.
+
+In our example application, this is done completely in-memory. However, we could use a database table to track retries for each message. In order to protect against unrecoverable errors like OOME, the application should attempt to increment the attempts column and make the decision to give up _before_ processing the message. That is, do not try to increment the attempts column as a way of handling errors like OOME. There is no guarantee the application will successfully access the database when the JVM has run out of memory. This approach could lead to infinite processing attempts if the task itself causes thse unrecoverable errors.
 
 ==== 4.5 Message Prioritization
 
