@@ -1,5 +1,6 @@
 package com.github.tomboyo.silverbroccoli;
 
+import com.github.tomboyo.silverbroccoli.kafka.CommonProperties;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.producer.KafkaProducer;
@@ -10,6 +11,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.Environment;
 
 import java.time.Duration;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -26,38 +28,48 @@ public class Topics {
 
   private static List<NewTopic> topics() {
     return List.of(
-        new NewTopic("input-high", Optional.of(2), Optional.empty())
-            .configs(
-                Map.of(
-                    RETENTION_MS_CONFIG, "60000",
-                    RETENTION_BYTES_CONFIG, "1024")),
-        new NewTopic("input-low", Optional.of(2), Optional.empty()),
-        new NewTopic("input-high.DLT", Optional.empty(), Optional.empty()),
-        new NewTopic("input-low.DLT", Optional.empty(), Optional.empty()),
-        new NewTopic("left", Optional.empty(), Optional.empty()),
-        new NewTopic("right", Optional.empty(), Optional.empty()));
+            new NewTopic("input-high", Optional.of(2), Optional.empty()),
+            new NewTopic("input-low", Optional.of(2), Optional.empty()),
+            new NewTopic("input-high.DLT", Optional.empty(), Optional.empty()),
+            new NewTopic("input-low.DLT", Optional.empty(), Optional.empty()),
+            new NewTopic("left", Optional.empty(), Optional.empty()),
+            new NewTopic("right", Optional.empty(), Optional.empty()))
+        .stream()
+        .map(
+            nt ->
+                nt.configs(
+                    Map.of(
+                        RETENTION_MS_CONFIG, "60000",
+                        RETENTION_BYTES_CONFIG, "1024")))
+        .collect(Collectors.toList());
   }
 
-  public static void initializeTopics(
-      Environment env, AdminClient adminClient, KafkaProducer<String, Object> producer) {
-    createTopics(
-        LOGGER, env.getProperty("recreate-topics", Boolean.class, false), adminClient, topics());
-    produceMessages(List.of("input-high", "input-low"), 3, producer);
+  public static void initializeTopics(Environment env, CommonProperties commonProperties) {
+    var config = new HashMap<>(commonProperties.getKafkaCommon());
+    config.putAll(
+        Map.of(
+            "key.serializer", "org.apache.kafka.common.serialization.StringSerializer",
+            "value.serializer", "com.github.tomboyo.silverbroccoli.kafka.JacksonObjectSerializer"));
+    var producer = new KafkaProducer<String, Object>(config);
+    var adminClient = AdminClient.create(config);
+    var recreateTopics = env.getProperty("recreate-topics", Boolean.class, false);
+    createTopics(recreateTopics, adminClient, topics());
+    produceMessages(List.of("input-high", "input-low"), 2, producer);
   }
 
   public static void createTopics(
-      Logger logger, boolean recreateTopics, AdminClient adminClient, List<NewTopic> topics) {
+      boolean recreateTopics, AdminClient adminClient, List<NewTopic> topics) {
     // NOTE: deleting topics may partially fail, and topic deletion may take time to propagate. This
     // sometimes results in an incomplete list of topics which breaks producers/consumers. This is
     // currently a low-effort impl to speed up local development some.
     if (recreateTopics) {
-      logger.info("Deleting topics");
+      LOGGER.info("Deleting topics");
       adminClient.deleteTopics(topics.stream().map(NewTopic::name).collect(Collectors.toList()));
     }
 
-    logger.info("Creating topics");
+    LOGGER.info("Creating topics");
     adminClient.createTopics(topics);
-    logger.info("Topics created. Closing admin client.");
+    LOGGER.info("Topics created. Closing admin client.");
     adminClient.close(Duration.ofMinutes(1));
   }
 
@@ -82,7 +94,7 @@ public class Topics {
               .forEach(
                   record -> {
                     try {
-                      producer.send(record).get();
+                      producer.send(record);
                     } catch (Exception e) {
                       LOGGER.error("Failed to produce message", e);
                     }

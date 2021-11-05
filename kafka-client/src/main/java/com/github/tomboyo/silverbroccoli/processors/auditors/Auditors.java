@@ -1,16 +1,17 @@
-package com.github.tomboyo.silverbroccoli.processors;
+package com.github.tomboyo.silverbroccoli.processors.auditors;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.tomboyo.silverbroccoli.AuditLogRepository;
 import com.github.tomboyo.silverbroccoli.Event;
-import com.github.tomboyo.silverbroccoli.kafka.BatchConsumer;
+import com.github.tomboyo.silverbroccoli.kafka.BoundedRetryBatchConsumer;
+import com.github.tomboyo.silverbroccoli.kafka.BoundedRetryBatchConsumerProperties;
+import com.github.tomboyo.silverbroccoli.kafka.CommonProperties;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.producer.Callback;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.core.env.Environment;
 
 import java.io.IOException;
 
@@ -20,28 +21,30 @@ public class Auditors {
 
   private static final Logger LOGGER = LoggerFactory.getLogger(Auditors.class);
 
-  // TODO: common consumer configuration
   public static final ObjectMapper DEFAULT_MAPPER =
       new ObjectMapper().configure(FAIL_ON_UNKNOWN_PROPERTIES, false);
 
   public static void initialize(
-      Environment env, KafkaProducer<String, Object> producer, AuditLogRepository repository) {
-    BatchConsumer.<String, byte[]>start(
-        env,
-        producer,
-        "sb.auditors.high.priority",
-        (record) -> handle(record, producer, repository));
-    BatchConsumer.<String, byte[]>start(
-        env,
-        producer,
-        "sb.auditors.low.priority",
-        (record) -> handle(record, producer, repository));
+      CommonProperties commonProperties,
+      @HighPriorityAuditors BoundedRetryBatchConsumerProperties highPriorityConfig,
+      @LowPriorityAuditors BoundedRetryBatchConsumerProperties lowPriorityConfig,
+      AuditLogRepository repository) {
+    BoundedRetryBatchConsumer.<String, byte[]>fromConfig(
+            commonProperties,
+            highPriorityConfig,
+            (producer, record) -> handle(repository, producer, record))
+        .start();
+    BoundedRetryBatchConsumer.<String, byte[]>fromConfig(
+            commonProperties,
+            lowPriorityConfig,
+            (producer, record) -> handle(repository, producer, record))
+        .start();
   }
 
   private static void handle(
-      ConsumerRecord<String, byte[]> record,
+      AuditLogRepository repository,
       KafkaProducer<String, Object> kafkaProducer,
-      AuditLogRepository repository) {
+      ConsumerRecord<String, byte[]> record) {
     var message = record.value();
     Event event;
     try {
@@ -51,7 +54,6 @@ public class Auditors {
     }
     LOGGER.info("Processing: event={}", event);
 
-    // TODO: transaction for producer!
     kafkaProducer.send(
         new ProducerRecord<>("left", new Event().message("LEFT: " + event.getMessage())));
     repository.createIfNotExists(event.getMessage());

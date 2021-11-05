@@ -360,18 +360,18 @@ Progress so far:
 * [x] Connect to the instance using OAUTH and TLS.
 * [x] Configure `input-high`, `input-low`, `input-high.DLT`, `input-low.DLT`, `left`, and `right` topics (with partitions, replication, and retention settings).
 * [x] Produce one or more structured (e.g. JSON via Jackson) messages to `input-high` and `input-low` on demand. (This should work for any arbitrary stimuli, not just a framework hook.)
-* [ ] Consume messages from the topics
-** [ ] concurrently (in a competing-consumer relationship)
-** [ ] as well as in a pub-sub relationship (e.g. a Logger),
+* [x] Consume messages from the topics
+** [x] concurrently (in a competing-consumer relationship)
+** [x] as well as in a pub-sub relationship (e.g. a Logger),
 ** [x] with bounded retry,
-** [ ] and dead-lettering,
+** [x] and dead-lettering,
 ** [x] such that one topic has priority over the other.
 * [ ] Produce multiple messages to multiple topics as a result of processing one message.
 ** [ ] within a transaction
 ** [ ] which is synchronized (non-XA) with a database transaction (for an idempotent database operation).
-* [ ] Inspect the dead-letter topic (DLT).
+* [x] Inspect the dead-letter topic (DLT).
 * [ ] Gather metrics suitable for monitoring (to include everything recommended by [<<Kafka>>, ch. 11]).
-* [ ] Create a batch consumer.
+* [x] Create a batch consumer.
 
 [#2-setup-and-run]
 === Setup And Run
@@ -441,11 +441,17 @@ When configuring producers, take advantage of the `ProducerConfig` and `CommonCl
 
 === 4. Consume Messages
 
-==== 4.3 Bounded Retry
+==== 4.1 Competing-Consumers and 4.2 Pub-Sub
 
-We achieve bounded retry by tracking number of attempts before processing a message. If that number of attempts exceeds a threshold, we skip the message (that is, commit past it). The implementation may choose to submit the message to a DLT, log an error, or proceed silently dependeing on requirements.
+Consumers consume messages in either a competing relationship or a pub-sub relationship based on their _consumer group_. Consumers in the same group compete for messages. Consumers in different groups each receive a copy of every message.
 
-In our example application, this is done completely in-memory. However, we could use a database table to track retries for each message. In order to protect against unrecoverable errors like OOME, the application should attempt to increment the attempts column and make the decision to give up _before_ processing the message. That is, do not try to increment the attempts column as a way of handling errors like OOME. There is no guarantee the application will successfully access the database when the JVM has run out of memory. This approach could lead to infinite processing attempts if the task itself causes thse unrecoverable errors.
+==== 4.3 Bounded Retry & 4.4 Dead-Lettering
+
+We achieve bounded retry by tracking number of attempts before processing a message. If that number of attempts exceeds a threshold, we skip the message (that is, commit past it). The implementation may choose to submit the message to a DLT, log an error, or proceed silently depending on requirements.
+
+Note that a dead-letter topic is a normal topic. When we dead-letter a message, we wrap it in a serializable type which conveys most of the original record fields unmodified and publish it to the designated dead-letter topic, like `mytopic.DLT`. We ensure there is enough context captured by the dead-letter record for engineers to research the root cause of errors later on.
+
+In our example application, this is done completely in-memory. However, we could use a database table of kafka topic to track retries for each message. In order to protect against unrecoverable errors like OOME, the application should attempt to track the number of attempts, tll, or other metric _before_ processing the message. This pre-emptive strategy protects us against catastrophic errors like JVM OutOfMemeoryErrors. (If we tried to increment our number of attempts in a catch block for such an error, there's no guarantee we would ever successfully do so, and our retry would continue indefinitely.)
 
 ==== 4.5 Message Prioritization
 
@@ -458,6 +464,14 @@ The simplest method, and the one we propose, is to create consumers one-to-one w
 The second method is to use the the link:https://github.com/riferrei/bucket-priority-pattern[bucket priority pattern]. This routes messages by-priority to a specific collection of partitions, where more-urgent messages are routed to collections with a larger number of partitions. As a result, consumers subscribed to many partitions are more likely to consume high-priority messages as long as there are any. The priority of messages is controlled by the relative proportion of partitions within each priority level. This offers less control over throughput than the above solution, and doesn't seem to have any obvious advantages.
 
 Finally, applications can re-sequence messages in-memory using consumers subscribed to multiple priority topics. In brief, this leads to a complex design overall, and runs the risk of completely blocking low-priority topics so long as a small but consistent number of high-priority messages arrive. While this allows the system to automatically assign resources to the most important messages, it introduces systemic risk and is inappropriate for the problem of _n_ separate SLAs by priority.
+
+=== 6. Inspect the dead-letter topic
+
+Dead-letter topics are the same as all other topics, so we simply start a consumer drawing from the dead-letter topic in order to access its contents.
+
+=== 8. Batch consumption
+
+All kafka consumers are essentially batch consumers. We can design our consumers to commit offsets either after each message, or after several messages are processed. We can also configure the number of messages retrieved per poll using the `max.poll.records` consumer property.
 
 == References
 

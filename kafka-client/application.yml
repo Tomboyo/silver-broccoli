@@ -6,33 +6,47 @@ spring:
 
 logging:
   level:
-    root: OFF
+    root: ERROR
     com.github.tomboyo.silverbroccoli: INFO
 
 sb:
-  kafka.producer:
-    key.serializer: org.apache.kafka.common.serialization.StringSerializer
-    value.serializer: com.github.tomboyo.silverbroccoli.kafka.JacksonObjectSerializer
-  event.loggers:
-    topics: input-high, input-low, input-high.DLT, input-low.DLT, left, right, other.DLT
-    dlt: other.DLT
-    workers: 2
+  loggers.dlt:
+    topics: input-high.DLT, input-low.DLT, other.DLT
+    # dlt: not configured
+    workers: 1
     # poll.timeout.ms: 100
     # max.attempts: 3
-    kafka.consumer:
+    kafkaConsumer:
       auto.offset.reset: earliest
       enable.auto.commit: false
-      group.id: EventLoggers
+      group.id: DltLoggers
       partition.assignment.strategy: org.apache.kafka.clients.consumer.RoundRobinAssignor
       key.deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value.deserializer: org.apache.kafka.common.serialization.ByteArrayDeserializer
+      isolation.level: read_committed
+    kafkaProducer:
+      key.serializer: org.apache.kafka.common.serialization.StringSerializer
+      value.serializer: com.github.tomboyo.silverbroccoli.kafka.JacksonObjectSerializer
+  loggers.leftright:
+    topics: left, right
+    workers: 1
+    kafkaConsumer:
+      auto.offset.reset: earliest
+      enable.auto.commit: false
+      group.id: LeftRightLoggers
+      partition.assignment.strategy: org.apache.kafka.clients.consumer.RoundRobinAssignor
+      key.deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value.deserializer: org.apache.kafka.common.serialization.ByteArrayDeserializer
+    kafkaProducer:
+      key.serializer: org.apache.kafka.common.serialization.StringSerializer
+      value.serializer: com.github.tomboyo.silverbroccoli.kafka.JacksonObjectSerializer
   auditors.high.priority:
     topics: input-high
     dlt: input-high.DLT
-    workers: 3
+    workers: 1
     # TODO: batch.size (alias of max.poll.records)
     # TODO: enforce enable.auto.commit
-    kafka.consumer:
+    kafkaConsumer:
       auto.offset.reset: earliest
       enable.auto.commit: false
       group.id: Auditors
@@ -40,11 +54,14 @@ sb:
       partition.assignment.strategy: org.apache.kafka.clients.consumer.RoundRobinAssignor
       key.deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value.deserializer: org.apache.kafka.common.serialization.ByteArrayDeserializer
+    kafkaProducer:
+      key.serializer: org.apache.kafka.common.serialization.StringSerializer
+      value.serializer: com.github.tomboyo.silverbroccoli.kafka.JacksonObjectSerializer
   auditors.low.priority:
     topics: input-low
     dlt: input-low.DLT
-    workers: 2
-    kafka.consumer:
+    workers: 1
+    kafkaConsumer:
       auto.offset.reset: earliest
       enable.auto.commit: false
       group.id: Auditors
@@ -52,4 +69,6 @@ sb:
       partition.assignment.strategy: org.apache.kafka.clients.consumer.RoundRobinAssignor
       key.deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value.deserializer: org.apache.kafka.common.serialization.ByteArrayDeserializer
-
+    kafkaProducer:
+      key.serializer: org.apache.kafka.common.serialization.StringSerializer
+      value.serializer: com.github.tomboyo.silverbroccoli.kafka.JacksonObjectSerializer
