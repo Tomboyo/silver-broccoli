@@ -2,6 +2,7 @@ package com.github.tomboyo.silverbroccoli;
 
 import com.github.tomboyo.silverbroccoli.kafka.BoundedRetryBatchConsumerProperties;
 import com.github.tomboyo.silverbroccoli.kafka.CommonProperties;
+import com.github.tomboyo.silverbroccoli.kafka.TransactionalBoundedRetryConsumerProperties;
 import com.github.tomboyo.silverbroccoli.processors.auditors.Auditors;
 import com.github.tomboyo.silverbroccoli.processors.auditors.HighPriorityAuditors;
 import com.github.tomboyo.silverbroccoli.processors.auditors.LowPriorityAuditors;
@@ -27,8 +28,8 @@ public class Main {
       Environment env,
       AuditLogRepository repository,
       CommonProperties commonProperties,
-      @HighPriorityAuditors BoundedRetryBatchConsumerProperties highPriorityAuditors,
-      @LowPriorityAuditors BoundedRetryBatchConsumerProperties lowPriorityAuditors,
+      @HighPriorityAuditors TransactionalBoundedRetryConsumerProperties highPriorityAuditors,
+      @LowPriorityAuditors TransactionalBoundedRetryConsumerProperties lowPriorityAuditors,
       @LeftRightLoggers BoundedRetryBatchConsumerProperties leftRightLoggers,
       @DltLoggers BoundedRetryBatchConsumerProperties dltLoggers) {
     return (_args) -> {

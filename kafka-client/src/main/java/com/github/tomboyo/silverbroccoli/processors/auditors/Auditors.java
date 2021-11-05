@@ -3,9 +3,9 @@ package com.github.tomboyo.silverbroccoli.processors.auditors;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.tomboyo.silverbroccoli.AuditLogRepository;
 import com.github.tomboyo.silverbroccoli.Event;
-import com.github.tomboyo.silverbroccoli.kafka.BoundedRetryBatchConsumer;
-import com.github.tomboyo.silverbroccoli.kafka.BoundedRetryBatchConsumerProperties;
 import com.github.tomboyo.silverbroccoli.kafka.CommonProperties;
+import com.github.tomboyo.silverbroccoli.kafka.TransactionalBoundedRetryConsumer;
+import com.github.tomboyo.silverbroccoli.kafka.TransactionalBoundedRetryConsumerProperties;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.producer.Callback;
 import org.apache.kafka.clients.producer.KafkaProducer;
@@ -26,15 +26,15 @@ public class Auditors {
 
   public static void initialize(
       CommonProperties commonProperties,
-      @HighPriorityAuditors BoundedRetryBatchConsumerProperties highPriorityConfig,
-      @LowPriorityAuditors BoundedRetryBatchConsumerProperties lowPriorityConfig,
+      @HighPriorityAuditors TransactionalBoundedRetryConsumerProperties highPriorityConfig,
+      @LowPriorityAuditors TransactionalBoundedRetryConsumerProperties lowPriorityConfig,
       AuditLogRepository repository) {
-    BoundedRetryBatchConsumer.<String, byte[]>fromConfig(
+    TransactionalBoundedRetryConsumer.<String, byte[]>fromConfig(
             commonProperties,
             highPriorityConfig,
             (producer, record) -> handle(repository, producer, record))
         .start();
-    BoundedRetryBatchConsumer.<String, byte[]>fromConfig(
+    TransactionalBoundedRetryConsumer.<String, byte[]>fromConfig(
             commonProperties,
             lowPriorityConfig,
             (producer, record) -> handle(repository, producer, record))

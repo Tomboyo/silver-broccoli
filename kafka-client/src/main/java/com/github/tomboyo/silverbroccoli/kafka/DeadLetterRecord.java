@@ -16,6 +16,8 @@ public class DeadLetterRecord<K, V> {
   private String topic;
   private Map<String, byte[]> headers;
 
+  public DeadLetterRecord() {}
+
   public DeadLetterRecord(ConsumerRecord<K, V> undeliverableRecord) {
     key = undeliverableRecord.key();
     value = undeliverableRecord.value();
@@ -59,5 +61,19 @@ public class DeadLetterRecord<K, V> {
 
   public void setHeaders(Map<String, byte[]> headers) {
     this.headers = headers;
+  }
+
+  @Override
+  public String toString() {
+    return "DeadLetterRecord{"
+        + " key=\""
+        + key
+        + "\" value=\""
+        + value
+        + "\" topic=\""
+        + topic
+        + "\" headers=\""
+        + headers
+        + "\" }";
   }
 }

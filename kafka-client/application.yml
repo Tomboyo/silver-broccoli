@@ -43,32 +43,34 @@ sb:
   auditors.high.priority:
     topics: input-high
     dlt: input-high.DLT
-    workers: 1
     # TODO: batch.size (alias of max.poll.records)
     # TODO: enforce enable.auto.commit
     kafkaConsumer:
       auto.offset.reset: earliest
       enable.auto.commit: false
-      group.id: Auditors
+      group.id: AuditorsHighPriority
       max.poll.records: 5
       partition.assignment.strategy: org.apache.kafka.clients.consumer.RoundRobinAssignor
       key.deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value.deserializer: org.apache.kafka.common.serialization.ByteArrayDeserializer
+      isolation.level: read_committed
     kafkaProducer:
       key.serializer: org.apache.kafka.common.serialization.StringSerializer
       value.serializer: com.github.tomboyo.silverbroccoli.kafka.JacksonObjectSerializer
+      transactional.id: AuditorsHighPriority
   auditors.low.priority:
     topics: input-low
     dlt: input-low.DLT
-    workers: 1
     kafkaConsumer:
       auto.offset.reset: earliest
       enable.auto.commit: false
-      group.id: Auditors
+      group.id: AuditorsLowPriority
       max.poll.records: 5
       partition.assignment.strategy: org.apache.kafka.clients.consumer.RoundRobinAssignor
       key.deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value.deserializer: org.apache.kafka.common.serialization.ByteArrayDeserializer
+      isolation.level: read_committed
     kafkaProducer:
       key.serializer: org.apache.kafka.common.serialization.StringSerializer
       value.serializer: com.github.tomboyo.silverbroccoli.kafka.JacksonObjectSerializer
+      transactional.id: AuditorsLowPriority

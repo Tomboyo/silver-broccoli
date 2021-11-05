@@ -9,10 +9,9 @@ import java.util.Map;
 import java.util.Optional;
 
 @ConstructorBinding
-public class BoundedRetryBatchConsumerProperties {
+public class TransactionalBoundedRetryConsumerProperties {
   private List<String> topics;
   private String dlt;
-  private int workers;
   private int maxAttempts = 3;
   private Duration pollTimeout = Duration.ofMillis(100);
   private Map<String, String> kafkaConsumer;
@@ -32,14 +31,6 @@ public class BoundedRetryBatchConsumerProperties {
 
   public void setDlt(String dlt) {
     this.dlt = dlt;
-  }
-
-  public int getWorkers() {
-    return workers;
-  }
-
-  public void setWorkers(int workers) {
-    this.workers = workers;
   }
 
   public int getMaxAttempts() {
@@ -81,8 +72,6 @@ public class BoundedRetryBatchConsumerProperties {
         + topics
         + "\" dlt=\""
         + dlt
-        + "\" workers=\""
-        + workers
         + "\" kafkaConsumer=\""
         + kafkaConsumer
         + "\" kafkaProducer=\""
