@@ -213,7 +213,7 @@ public class TransactionalBoundedRetryConsumer<K, V> implements Runnable {
           // The delegate may produce any number of records within this transaction.
           delegate.consume(producer, record);
 
-          // Synchronously commit this record and any records produced by the delegate.
+          // Add offsets to the transaction.
           producer.sendOffsetsToTransaction(
               Map.of(
                   new TopicPartition(record.topic(), record.partition()),
