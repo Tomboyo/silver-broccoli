@@ -447,11 +447,9 @@ Consumers consume messages in either a competing relationship or a pub-sub relat
 
 ==== 4.3 Bounded Retry & 4.4 Dead-Lettering
 
-We achieve bounded retry by tracking number of attempts before processing a message. If that number of attempts exceeds a threshold, we skip the message (that is, commit past it). The implementation may choose to submit the message to a DLT, log an error, or proceed silently depending on requirements.
+We achieve bounded retry by tracking number of attempts before processing a message. If that number of attempts exceeds a threshold, we skip the message (that is, commit past it). The implementation may choose to submit the message to a DLT, log an error, or proceed silently depending on requirements. The implementation may which to use a TTL instead of a number of attempts in order to guarantee that task is given enough time rather than enough tries, since a TTL may be easier to tune with respect to backoff intervals and expected service recovery times.
 
-Note that a dead-letter topic is a normal topic. When we dead-letter a message, we wrap it in a serializable type which conveys most of the original record fields unmodified and publish it to the designated dead-letter topic, like `mytopic.DLT`. We ensure there is enough context captured by the dead-letter record for engineers to research the root cause of errors later on.
-
-In our example application, this is done completely in-memory. However, we could use a database table of kafka topic to track retries for each message. In order to protect against unrecoverable errors like OOME, the application should attempt to track the number of attempts, tll, or other metric _before_ processing the message. This pre-emptive strategy protects us against catastrophic errors like JVM OutOfMemeoryErrors. (If we tried to increment our number of attempts in a catch block for such an error, there's no guarantee we would ever successfully do so, and our retry would continue indefinitely.)
+Note that a dead-letter topic is a normal topic. When we dead-letter a message, we copy the byte contents of the original message from the source topic into the dead-lettered topic, with optional custom headers to convey any additional metadata as necessary. The goal is to capture any information that engineers may need to determine why the record was unprocessable later on.
 
 ==== 4.5 Message Prioritization
 
@@ -467,7 +465,7 @@ Finally, applications can re-sequence messages in-memory using consumers subscri
 
 === 6. Inspect the dead-letter topic
 
-Dead-letter topics are the same as all other topics, so we simply start a consumer drawing from the dead-letter topic in order to access its contents.
+Dead-letter topics are the same as all other topics, so we simply start a consumer drawing from the dead-letter topic in order to access its contents. We should note that a message may become dead-lettered because the byte contents of the message are malformed, so be aware that messages may not be deserializable if they are in the DLT.
 
 === 8. Batch consumption
 

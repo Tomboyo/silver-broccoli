@@ -201,10 +201,6 @@ public class BoundedRetryBatchConsumer<K, V> implements Runnable {
 
     @Override
     public void consume(KafkaProducer<K, Object> producer, ConsumerRecord<K, V> record) {
-      // TODO: store this number in a task database. Increment it before processing to protect
-      // against unrecoverable errors like OOME. Alternatively, use a kafka topic to track attempts.
-      // We will skip implementation for this project because we've done something like this before
-      // and are confident it works.
       var attempt = 0;
 
       while (++attempt <= maxAttempts) {
