@@ -9,6 +9,7 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.WakeupException;
+import org.apache.kafka.common.header.internals.RecordHeader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -254,7 +255,14 @@ public class TransactionalBoundedRetryConsumer<K, V> implements Runnable {
             dlt,
             record);
         producer.beginTransaction();
-        producer.send(new ProducerRecord<>(dlt.get(), new DeadLetterRecord<>(record)));
+        producer.send(
+            new ProducerRecord<>(
+                dlt.get(),
+                null,
+                null,
+                null,
+                record.value(),
+                List.of(new RecordHeader("original_topic", record.topic().getBytes()))));
         producer.sendOffsetsToTransaction(
             Map.of(
                 new TopicPartition(record.topic(), record.partition()),

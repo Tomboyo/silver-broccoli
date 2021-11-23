@@ -7,6 +7,7 @@ import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.errors.WakeupException;
+import org.apache.kafka.common.header.internals.RecordHeader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -234,9 +235,17 @@ public class BoundedRetryBatchConsumer<K, V> implements Runnable {
             maxAttempts,
             dlt,
             record);
-        var deadLetter = new DeadLetterRecord<>(record);
         // This must be synchronous to guarantee the DLT entry exists before committing.
-        producer.send(new ProducerRecord<>(dlt.get(), deadLetter)).get();
+        producer
+            .send(
+                new ProducerRecord<>(
+                    dlt.get(),
+                    null,
+                    null,
+                    null,
+                    record.value(),
+                    List.of(new RecordHeader("original_topic", record.topic().getBytes()))))
+            .get();
       } catch (Exception e) {
         // Failure to DLT a record constitutes a serious error. The consumer will shut down to avoid
         // committing over an unprocessed entity. When the application restarts, we will try to

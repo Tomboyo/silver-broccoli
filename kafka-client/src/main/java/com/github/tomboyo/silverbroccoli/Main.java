@@ -34,8 +34,7 @@ public class Main {
       @DltLoggers BoundedRetryBatchConsumerProperties dltLoggers) {
     return (_args) -> {
       Topics.initializeTopics(env, commonProperties);
-      Loggers.initialize(commonProperties, leftRightLoggers);
-      Loggers.initialize(commonProperties, dltLoggers);
+      Loggers.initialize(commonProperties, leftRightLoggers, dltLoggers);
       Auditors.initialize(commonProperties, highPriorityAuditors, lowPriorityAuditors, repository);
     };
   }

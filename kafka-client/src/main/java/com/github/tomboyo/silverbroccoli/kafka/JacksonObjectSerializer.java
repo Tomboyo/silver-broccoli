@@ -13,6 +13,10 @@ public class JacksonObjectSerializer implements Serializer<Object> {
 
   @Override
   public byte[] serialize(String s, Object o) {
+    if (o instanceof byte[]) {
+      return (byte[]) o;
+    }
+
     try {
       return mapper.writeValueAsBytes(o);
     } catch (Exception e) {
