@@ -39,7 +39,7 @@ public class Topics {
             nt ->
                 nt.configs(
                     Map.of(
-                        RETENTION_MS_CONFIG, "60000",
+                        RETENTION_MS_CONFIG, "30000",
                         RETENTION_BYTES_CONFIG, "1024")))
         .collect(Collectors.toList());
   }

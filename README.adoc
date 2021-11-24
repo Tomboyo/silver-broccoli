@@ -366,9 +366,9 @@ Progress so far:
 ** [x] with bounded retry,
 ** [x] and dead-lettering,
 ** [x] such that one topic has priority over the other.
-* [ ] Produce multiple messages to multiple topics as a result of processing one message.
-** [ ] within a transaction
-** [ ] which is synchronized (non-XA) with a database transaction (for an idempotent database operation).
+* [x] Produce multiple messages to multiple topics as a result of processing one message.
+** [x] within a transaction
+** [x] which is synchronized (non-XA) with a database transaction (for an idempotent database operation).
 * [x] Inspect the dead-letter topic (DLT).
 * [ ] Gather metrics suitable for monitoring (to include everything recommended by [<<Kafka>>, ch. 11]).
 * [x] Create a batch consumer.
@@ -462,6 +462,24 @@ The simplest method, and the one we propose, is to create consumers one-to-one w
 The second method is to use the the link:https://github.com/riferrei/bucket-priority-pattern[bucket priority pattern]. This routes messages by-priority to a specific collection of partitions, where more-urgent messages are routed to collections with a larger number of partitions. As a result, consumers subscribed to many partitions are more likely to consume high-priority messages as long as there are any. The priority of messages is controlled by the relative proportion of partitions within each priority level. This offers less control over throughput than the above solution, and doesn't seem to have any obvious advantages.
 
 Finally, applications can re-sequence messages in-memory using consumers subscribed to multiple priority topics. In brief, this leads to a complex design overall, and runs the risk of completely blocking low-priority topics so long as a small but consistent number of high-priority messages arrive. While this allows the system to automatically assign resources to the most important messages, it introduces systemic risk and is inappropriate for the problem of _n_ separate SLAs by priority.
+
+=== 5. Publish to Multiple Topics as a Result of Processing
+
+Publishing to multiple topics is as easy as calling `producer.send` with different arguments, one for each topic. The following two subsections are more involved.
+
+==== 5.1 Transacted
+
+A Kafka producer with the `transactional.id` configuration is a _transactional producer_. Transactional producers are used to begin, commit, and abort (rollback) transactions. While a producer is in a transaction, we can add consumer offsets to the transaction and send messages. Produced messages and added offsets are committed or rolled back as a group (atomically). Note that only the producer should be used to commit consumer offsets using a transactional workflow.
+
+Transactional producers should have unique transactional IDs which are consistent between application restarts. For example, suppose we have two instances of an application which consumes from topic T1 and produces to topic T2 using a transactional producer. The producer in each instance of the application should have a different transactional ID.
+
+Suppose an application loses connection or times out for some other reason, and is replaced by a new instance. Both of these instances have a producer with the same transactional ID. When the original instance (the "Zombie") regains connection, the broker will recognize that there are two producers with the same ID. The older one (the Zombie) is then "fenced off" so that it doesn't inadvertently duplicate the writes of the new application instance.
+
+Similarly, when an instance of our application becomes a Zombie, Kafka may trigger a consumer group rebalance. As a result, a different instance of the application may begin committing transactions on the same partitions which the Zombie formerly did. When the zombie regains connection, Kafka cannot determine which of the two producers is newer by their IDs alone. Instead, as of KIP-447, Kafka relies on consumer group metadata sent by transactional producers. Since the Zombie producer is associated with an older generation of consumer group, Kafka will know to fence the Zombie producer.
+
+==== 5.2 Non-XA Transaction Synchronization
+
+As noted earlier in the document, Kafka does not support XA transactions, so we have to commit database transactions strictly before or strictly after kafka transactions, depending on the semantics we want. In this example, we commit database operations strictly before committing our kafka transaction. As a result, our database work has at-least-once semantics and needs to be idempotent in case the same kafka message is processed multiple times and triggers the database operation repeatedly. We must also design our system so that it tolerates an incomplete state where we've written to the database but not yet to Kafka (e.g. we should not assume that our kafka transaction has committed given the database transaction has committed). Once the kafka transaction commits, however, we may assume the database operation is complete as well.
 
 === 6. Inspect the dead-letter topic
 

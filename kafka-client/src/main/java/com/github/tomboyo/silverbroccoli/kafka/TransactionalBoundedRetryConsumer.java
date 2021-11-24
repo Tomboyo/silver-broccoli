@@ -214,7 +214,7 @@ public class TransactionalBoundedRetryConsumer<K, V> implements Runnable {
           producer.sendOffsetsToTransaction(
               Map.of(
                   new TopicPartition(record.topic(), record.partition()),
-                  new OffsetAndMetadata(record.offset())),
+                  new OffsetAndMetadata(record.offset() + 1)),
               metadata);
           producer.commitTransaction();
           return;
