@@ -1,5 +1,7 @@
 package com.github.tomboyo.silverbroccoli.kafka;
 
+import io.micrometer.core.instrument.Metrics;
+import io.micrometer.core.instrument.binder.kafka.KafkaClientMetrics;
 import org.apache.kafka.clients.consumer.ConsumerGroupMetadata;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
@@ -95,8 +97,19 @@ public class TransactionalBoundedRetryConsumer<K, V> implements Runnable {
   }
 
   public void start() {
+    var consumerMetrics = new KafkaClientMetrics(consumer);
+    var producerMetrics = new KafkaClientMetrics(producer);
+    consumerMetrics.bindTo(Metrics.globalRegistry);
+    producerMetrics.bindTo(Metrics.globalRegistry);
     executorService.submit(this);
-    Runtime.getRuntime().addShutdownHook(new Thread(this::stop));
+    Runtime.getRuntime()
+        .addShutdownHook(
+            new Thread(
+                () -> {
+                  consumerMetrics.close();
+                  producerMetrics.close();
+                  stop();
+                }));
   }
 
   public void stop() {

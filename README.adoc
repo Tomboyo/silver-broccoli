@@ -1,6 +1,6 @@
 = Silver Broccoli: Kafka Evaluation
 
-This project is an evaluation of Apache Kafka and supporting integration libraries based on their ability to create an application with all the capabilities listed below. Each integration library is given its own project folder and chapter in this document.
+This project is an evaluation of Apache Kafka and supporting integration libraries. The requirements we aim to satisfy are below. Each integration library is evaluated in its own section based on these requirements.
 
 Requirements:
 
@@ -22,8 +22,6 @@ Requirements:
 
 == 1. Spring Cloud Stream
 
-Progress so far:
-
 * [x] Connect to the instance securely (using SASL and TLS).
 * [x] Configure `input-high`, `input-low`, `input-high.DLT`, `input-low.DLT`, `left`, and `right` topics (with partitions, replication, and retention settings).
 * [x] Produce one or more structured (e.g. JSON via Jackson) messages to `input-high` and `input-low` on demand. (This should work for any arbitrary stimuli, not just a framework hook.)
@@ -32,7 +30,7 @@ Progress so far:
   ** [x] as well as in a pub-sub relationship (e.g. a Logger),
   ** [x] with bounded retry,
   ** [x] and dead-lettering,
-  ** [ ] such that one topic has priority over the other.
+  ** [x] such that one topic has priority over the other.
 * [x] Produce multiple messages to multiple topics as a result of processing one message.
   ** [x] within a transaction
   ** [x] which is synchronized (non-XA) with a database transaction (for an idempotent database operation).
@@ -183,7 +181,7 @@ We can configure Spring's Kafka Listener Container, which is automatically confi
 
 ==== 4.e Prioritized Message Consumption.
 
-TODO.
+We have not implemented this requirement using SCS, but it is possible to do so. We recommend the same approach here as using the <<kafka-client-4-5,kafka-client>> library.
 
 === 5. Publish to Multiple Topics as a Result of Processing
 
@@ -254,7 +252,7 @@ public static class TransactedUnitOfWork {
 
 Because Spring uses proxies ("interceptors") to start transactions around method calls, we _have_ to register our unit of work as a bean rather than define it as a lambda. Spring has no way to decorate a S.C.Function lambda with a transaction interceptor. As a result, this function binding hardly seems idiomatic, and is definitely unintuitive.
 
-That said, we must be mindful that Kafka _does not_ support XA. In the example above, Spring will try to commit the database transaction first and the kafka transaction second (this is the default). If the database operation fails to commit, both it and the kafka transaction will roll back. If the kafka transaction fails to commit, however, the database transaction _is not_ rolled back. Kafka may redeliver the message in this case, so we may end up trying to persist the same data twice. We should design our database operations to be idempotent as a result.
+That said, we must be mindful that Kafka <<kafka-eos,does not support XA>>. In the example above, Spring will try to commit the database transaction first and the kafka transaction second (this is the default). If the database operation fails to commit, both it and the kafka transaction will roll back. If the kafka transaction fails to commit, however, the database transaction _is not_ rolled back. Kafka may redeliver the message in this case, so we may end up trying to persist the same data twice. We should design our database operations to be idempotent as a result.
 
 === 6. Inspect a DLT
 
@@ -262,7 +260,9 @@ Dead-letter topics are normal topics. We subscribe to DLTs the same as any other
 
 === 7. Monitoring & Metrics
 
-Using Spring Boot Actuator we can monitor and control our system through the REST API. At a minimum we need to add actuator and web dependencies to the pom, then set the following properties:
+Spring Boot uses Micrometer to collect application statistics, which can publish those statistics over the REST API or to a variety of back-ends like Prometheus or SFX. Micrometer comes with native Kafka support, and Spring Boot and will automatically configure Kafka producer and consumer instrumentation if Spring Kafka is on the classpath (SCS uses Spring Kafka).
+
+For local testing, we can expose our metrics over a REST API with the following configuration.
 
 [source,yml]
 ----
@@ -278,7 +278,7 @@ management:
       show-details: always
 ----
 
-When we navigate to /actuator/health we can see the topics our application uses along with the Kafka listeners, their state, whether they are paused, and their group IDs. For more information, see the link:https://docs.spring.io/spring-cloud-stream/docs/current/reference/html/spring-cloud-stream.html#_health_indicator[health indicator documentation].
+The /actuator/health API lists the topics our application uses along with the Kafka listeners, their state, whether they are paused, and their group IDs. For more information, see the link:https://docs.spring.io/spring-cloud-stream/docs/current/reference/html/spring-cloud-stream.html#_health_indicator[health indicator documentation].
 
 The /actuator/bindings api gives an overview of effective binding configuration and status. We can  also issue POST requests to control (start, stop, pause, and unpause) those bindings. Bindings which support pausing have the `pausable` flag set to true. For example, the following curl request will pause a consumer:
 
@@ -293,65 +293,11 @@ For more information, see the link:https://docs.spring.io/spring-cloud-stream/do
 
 Browse to `/actuator/metrics` for a long list of metrics collected by default. For example, `/actuator/metrics/spring.cloud.stream.binder.kafka.offset` measures _consumer lag_, or the number of messages which have been produced to a topic but not yet consumed by a consumer group [<<Kafka>>, pp. 316]. We can use the `?tag=KEY:VALUE` query parameter to filter results down to a specific topic and/or consumer gorup. For example, `/actuator/metrics/spring.cloud.stream.binder.kafka.offset?tag=topic:mytopic&tag=group:mygroup` shows the lag on the `mytopic` topic for the `mygroup` consumer group.
 
-In the following two sections we will review the suggested metrics from [<<Kafka>>, ch. 11]. Bear in mind that most metrics endpoints can be filtered by multiple tags at once for better granularity.
-
-==== For the producer
-
-* The _record-error-rate_ metric is the rate at which producers fail to produce messages to Kafka (which are therefore lost). We should generate an alert whenever this is nonzero. The metric is found at `/actuator/metrics/kafka.producer.record.error.rate`.
-
-* The _request-latency-avg_ metric is the average amount of time that a produce request takes. We should generate an alert whenever this value is outside a measured normal for our application. The metric is found at `http://localhost:8081/actuator/metrics/kafka.producer.request.latency.avg`.
-
-* The _request-rate_ metric is the number of produce requests sent to brokers per second. Every request contains one or more batches of messages. The _record-send-rate_ measures the number of messages produced per second as a result of these batches. Finally, the _outgoing-byte-rate_ is the number of bytes overall sent per second. These metrics are available at the following endpoints:
-** /actuator/metrics/kafka.producer.request.rate
-** /actuator/metrics/kafka.producer.record.send.rate
-** /actuator/metrics/kafka.producer.outgoing.byte.rate
-
-* The _request-size-avg_ metric describes the average size in bytes of each producer request, which may contain one or more batches for a single topic partition. The average size of each batch is measured by the _batch-size-avg_ metric. The average size of any individual message is measured by _record-size-avg_, again in bytes. The average number of records in a produce request is tracked by _records-per-request-avg_. The following endpoints expose these metrics:
-** actuator/metrics/kafka.producer.request.size.avg
-** actuator/metrics/kafka.producer.batch.size.avg
-** actuator/metrics/kafka.producer.record.size.avg
-** actuator/metrics/kafka.producer.records.per.request.avg
-
-*  The _record-queue-time-avg_ is the average amount of time between when a record is ready to be sent to the broker and when it is actually produced, in milliseconds. For context, be aware that when a producer delivers messages to Kafka, it attempts to do so in large batches. Producers will wait until `batch.size` messages are ready to send before producing. Producers will only wait up to `linger.ms` milliseconds, however, at which point they will send whatever messages they already have. The _record-queue-time-avg_ can indicate when the `batch.size` and `linger.ms` configuration of the Kafka producers are effective. This metric is published at `/actuator/metrics/kafka.producer.record.queue.time.avg`.
-
-==== For the consumer
-
-The consumer metrics we are interested in are all actually "fetch manager" metrics.
-
-* The _fetch-latency-avg_ metric measures how long fetch requests to the broker take, which we may be able to generate alerts from based on measured normal latency. This is impacted by the consumer properties `fetch.min.bytes` and `fetch.max.wait.ms`. Similar to how batches are sent to the broker, consumers wait until a certain number of bytes worth of messages are available to fetch all at once, or until a certain timeout, in order to better utilize network and broker resources. As a result, latency can vary depending on topic activity, which may hamper attempts at using this metric for alerting. This metric is exposed at `/actuator/metrics/kafka.consumer.fetch.manager.fetch.latency.avg`.
-
-* We should avoid the _records-lag-max_ metric, which measures consumer lag _only_ for the single worst partition a consumer is working on. Spring provides an alternative, _kafka offset_, which measures the total number of unconsumed messages by topic and/or group. This metric is exposed at `/actuator/metrics/spring.cloud.stream.binder.kafka.offset`.
-
-* The _records-consumed-rate_  measures the number of messages consumed per second by a client. Similarly, the _bytes-consumed-rate_ measure the total number of bytes consumed by a client. These are exposed by the following endpoints:
-** /actuator/metrics/kafka.consumer.fetch.manager.records.consumed.rate
-** /actuator/metrics/kafka.consumer.fetch.manager.bytes.consumed.rate
-
-* The _fetch-rate_ metric measures the average number of fetch requests made by a consumer per second. The _fetch-size-avg_ measures the average number of bytes of those requests, and the _records-per-request-avg_ gives us the average number of messages per fetch. There _is not_ an equivalent to the producer record-size-average metric by default. The following endpoints expose these data:
-** /actuator/metrics/kafka.consumer.fetch.manager.fetch.rate
-** /actuator/metrics/kafka.consumer.fetch.manager.fetch.size.avg
-** /actuator/metrics/kafka.consumer.fetch.manager.records.per.request.avg
+See the <<Metrics>> section for an overview of Kafka consumer and producer metrics which <<Kafka>> recommends we monitor.
 
 === 8. Batch Processing
 
 TODO.
-
-== Kafka Notes
-
-=== Consumer Offsets
-
-In the event of broker failure or application disconnect, recovery falls back on Kafka consumer offsets, which we will summarize based on [<<Kafka>>, pp. 97-99] in this paragraph. Message consumers do not ACK each individual message like is typical for JMS. Instead, consumers have an _offset_ for each partition which tracks the index of the last retrieved message. Consumers periodically _commit_ their current offsets for their partitions to the broker, which saves them persistently. At any time, a consumer's offset may be behind or ahead of the offset of their last successfully _processed_ message, depending on the commit strategy. After a crash or rebalance (the assignment of partitions to consumers which happens as consumers connect and disconnect), consumers retrieve offsets for their partitions from the broker, then start consuming messages. If the last committed offset is _behind_ the most recently retrieved message for a partition (that is, a consumer received some messages but had not yet committed an updated offset prior to a crash), then the broker will re-deliver some messages (the already-delivered message will be delivered again). If the last committed offset was _ahead_ of their last retrieved message (that is, the consumer committed an offset before retrieving messages up to that offset, then crashed), then those messages will never be delivered.
-
-=== Transactions, Exactly Once Semantics (EOS), and Idempotence
-
-Kafka supports _exactly once semantics_ (EOS) that ensure messages are produced and consumed exactly one time. To guarantee exactly-once, Kafka ensures producers are _idempotent_, and our applications will frequently use _transactions_ to guard against duplicate side effects. These three things are all different aspects of the same concept.
-
-An _idempotent_ producer is one that cannot produce a duplicate message as a result of retry (such as to recover from network or broker failures). When idempotent producers start, they retrieve a unique identifier from a Kafka broker. When an idempotent producer produces a message, it adds its unique id and the sequence number of the message. Combined with the topic and partition name, these uniquely identify the message. By default, the broker keeps track of the last 5 message IDs received per partition, and producers maintain no more than 5 in-flight requests. Together these allow brokers to reject all duplicate messages they might receive. For more information, such as how failover and disconnect scenarios are managed, see [<<Kafka>>, ch. 8].
-
-NOTE: EOS semantics prevent duplicate delivery caused by producer retry. They do not prevent our application from producing the same content multiple times. For this reason we should rely on the producer mechanism exclusively to manage retry. If our application can generate identical message contents (e.g. if two producers read data from the same data source at the same time), we will need to handle it ourselves.
-
-Stream processing may rely on transactions to guarantee EOS. Transactional processing uses transactions in the familiar way to ensure that a group of actions succeeds or fails atomically. While idempotent producers have a unique producer id which can change when producers restart, transactional producers maintain a consistent producer id that may be used to identify the same producer between restarts. When transactional producers produce messages, they are saved to a partition just like normal messages. By default, consumers read all messages, including uncommitted ones. Consumers may be configured instead to only read _committed_ messages. In this case they rely on the broker to track transaction boundaries within a partition, and in particular to track the position of the _last stable offset (LSO)_, the offset of the first still-open transaction in the partition. Consumers will _only_ consume messages from a partition up to the LSO. If any transaction is uncommitted, it prevents consumers from fetching any later messages, including non-transacted and committed messages, from the same partition. By default, transactions time out after 15 minutes.
-
-WARNING: Kafka _does not_ support XA transactions. In other words, if a message handler successfully commits a database record in a transaction but does not successfully commit a message to Kafka, the database transaction _will not roll back._ For a message producer, this may simply mean our application needs to re-generate the message contents. For a transform function in the middle of a pipeline, though, this may lead to re-delivered messages. We are therefore advised to make all our database operations _idempotent_. When Kafka re-delivers the message our transform failed to consume fully, an idempotent database operation will amount to a no-op if it succeeded the last time we received the message, and so there is no harm done. It is possible, however, that a message may be chronically unprocessable. We may need a way to remove the orphaned database entry (perhaps as a consequence of DLQ processing).
 
 == 2. Kafka Client
 
@@ -370,7 +316,7 @@ Progress so far:
 ** [x] within a transaction
 ** [x] which is synchronized (non-XA) with a database transaction (for an idempotent database operation).
 * [x] Inspect the dead-letter topic (DLT).
-* [ ] Gather metrics suitable for monitoring (to include everything recommended by [<<Kafka>>, ch. 11]).
+* [x] Gather metrics suitable for monitoring (to include everything recommended by [<<Kafka>>, ch. 11]).
 * [x] Create a batch consumer.
 
 [#2-setup-and-run]
@@ -451,13 +397,14 @@ We achieve bounded retry by tracking number of attempts before processing a mess
 
 Note that a dead-letter topic is a normal topic. When we dead-letter a message, we copy the byte contents of the original message from the source topic into the dead-lettered topic, with optional custom headers to convey any additional metadata as necessary. The goal is to capture any information that engineers may need to determine why the record was unprocessable later on.
 
+[#kafka-client-4-5]
 ==== 4.5 Message Prioritization
 
-As mentioned earlier, our real-world requirement is not to ensure that messages are processed in order fo priority, but to ensure that messages can be divided up into different service levels, where "more urgent" messages are processed within a shorter time-frame than "less urgent" messages.
+As mentioned earlier, we must guarantee only that higher-priority messages are processed at a faster rate than lower-priority messages. It need not be the case that all high-priority messages are processed before any low-priority messages.
 
 That said, for completeness we note that Kafka does not natively support message prioritization within a topic. However, we do not need it to. Our real-world use case involves a small number of unchanging priority levels. We can easily model this by using distinct topics per priority level, and scaling the number of consumers per topic. This allows us to tune throughput of each message priority independently of the others, even automatically in response to unexpected load or latency.
 
-The simplest method, and the one we propose, is to create consumers one-to-one with topics, deployed as independent services (e.g. kubernetes containers), and scale the number of services at runtime using operational tooling (e.g. the OpenShift UI). This allows us to accomodate arbitrary load both automatically and at a granular level. The implementation is the simplest of those we will metnion below.
+The simplest method, and the one we propose, is to create consumers one-to-one with topics, deployed as independent services (e.g. kubernetes containers), and scale the number of services at runtime using operational tooling (e.g. the OpenShift UI). This allows us to accomodate arbitrary load both automatically and at a granular level. The implementation is the simplest of those we will mention below.
 
 The second method is to use the the link:https://github.com/riferrei/bucket-priority-pattern[bucket priority pattern]. This routes messages by-priority to a specific collection of partitions, where more-urgent messages are routed to collections with a larger number of partitions. As a result, consumers subscribed to many partitions are more likely to consume high-priority messages as long as there are any. The priority of messages is controlled by the relative proportion of partitions within each priority level. This offers less control over throughput than the above solution, and doesn't seem to have any obvious advantages.
 
@@ -479,15 +426,101 @@ Similarly, when an instance of our application becomes a Zombie, Kafka may trigg
 
 ==== 5.2 Non-XA Transaction Synchronization
 
-As noted earlier in the document, Kafka does not support XA transactions, so we have to commit database transactions strictly before or strictly after kafka transactions, depending on the semantics we want. In this example, we commit database operations strictly before committing our kafka transaction. As a result, our database work has at-least-once semantics and needs to be idempotent in case the same kafka message is processed multiple times and triggers the database operation repeatedly. We must also design our system so that it tolerates an incomplete state where we've written to the database but not yet to Kafka (e.g. we should not assume that our kafka transaction has committed given the database transaction has committed). Once the kafka transaction commits, however, we may assume the database operation is complete as well.
+Kafka <<kafka-eos,does not support XA transactions>>, so we have to commit database transactions strictly before or strictly after kafka transactions, depending on the semantics we want. In this example, we commit database operations strictly before committing our kafka transaction. As a result, our database work has at-least-once semantics and needs to be idempotent in case the same kafka message is processed multiple times and triggers the database operation repeatedly. We must also design our system so that it tolerates an incomplete state where we've written to the database but not yet to Kafka (e.g. we should not assume that our kafka transaction has committed given the database transaction has committed). Once the kafka transaction commits, however, we may assume the database operation is complete as well.
 
 === 6. Inspect the dead-letter topic
 
 Dead-letter topics are the same as all other topics, so we simply start a consumer drawing from the dead-letter topic in order to access its contents. We should note that a message may become dead-lettered because the byte contents of the message are malformed, so be aware that messages may not be deserializable if they are in the DLT.
 
+=== 7. Metrics & Monitoring
+
+Spring Boot uses Micrometer to collect application statistics, which can publish those statistics over the REST API or to a variety of back-ends like Prometheus or SFX. Micrometer comes with native Kafka support. To gather client metrics, we only need to create a metrics instance when the client is started:
+
+[source, java]
+----
+var consumerMetrics = new KafkaClientMetrics(consumer);
+    var producerMetrics = new KafkaClientMetrics(producer);
+    consumerMetrics.bindTo(Metrics.globalRegistry);
+    producerMetrics.bindTo(Metrics.globalRegistry);
+    Runtime.getRuntime()
+        .addShutdownHook(
+            new Thread(
+                () -> {
+                  consumerMetrics.close();
+                  producerMetrics.close();
+                }));
+----
+
+For local testing, we can expose our metrics over a REST API with the following configuration.
+
+[source,yml]
+----
+management:
+  endpoints:
+    web:
+      exposure:
+        # Or '*' to enble everything.
+        include: 'bindings'
+  endpoint:
+    health:
+      # Optional, but informative.
+      show-details: always
+----
+
+The `/actuator/metrics` API lists all kafka metrics collected by our instrumentation. For example, `/actuator/metrics/kafka.consumer.fetch.manager.records.lag.max` shows the maximum consumer lag of all partitions subscribed by a consumer. We can use the `?tag=KEY:VALUE` query parameter to filter by dimensions (tags). For exmple, `http://localhost:8080/actuator/metrics/kafka.consumer.fetch.manager.records.lag.max?client.id:consumer-DltLoggers-2` retrieves the max lag for only the DltLoggers-2 consumer.
+
+See the <<Metrics>> section for an overview of Kafka consumer and producer metrics which <<Kafka>> recommends we monitor.
+
 === 8. Batch consumption
 
 All kafka consumers are essentially batch consumers. We can design our consumers to commit offsets either after each message, or after several messages are processed. We can also configure the number of messages retrieved per poll using the `max.poll.records` consumer property.
+
+== Kafka Concepts
+
+=== Metrics
+
+In the following two sections we will review the suggested metrics from [<<Kafka>>, ch. 11].
+
+==== Producer Metrics
+
+* The _record-error-rate_ metric is the rate at which producers fail to produce messages to Kafka (which are therefore lost). We should generate an alert whenever this is nonzero.
+
+* The _request-latency-avg_ metric is the average amount of time that a produce request takes. We should generate an alert whenever this value is outside a measured normal for our application.
+
+* The _request-rate_ metric is the number of produce requests sent to brokers per second. Every request contains one or more batches of messages. The _record-send-rate_ measures the number of messages produced per second as a result of these batches. Finally, the _outgoing-byte-rate_ is the number of bytes overall sent per second.
+
+* The _request-size-avg_ metric describes the average size in bytes of each producer request, which may contain one or more batches for a single topic partition. The average size of each batch is measured by the _batch-size-avg_ metric. The average size of any individual message is measured by _record-size-avg_, again in bytes. The average number of records in a produce request is tracked by _records-per-request-avg_.
+
+*  The _record-queue-time-avg_ is the average amount of time between when a record is ready to be sent to the broker and when it is actually produced, in milliseconds. For context, be aware that when a producer delivers messages to Kafka, it attempts to do so in large batches. Producers will wait until `batch.size` messages are ready to send before producing. Producers will only wait up to `linger.ms` milliseconds, however, at which point they will send whatever messages they already have. The _record-queue-time-avg_ can indicate when the `batch.size` and `linger.ms` configuration of the Kafka producers are effective.
+
+==== Consumer Metrics
+
+The consumer metrics we are interested in are all actually "fetch manager" metrics.
+
+* The _fetch-latency-avg_ metric measures how long fetch requests to the broker take, which we may be able to generate alerts from based on measured normal latency. This is impacted by the consumer properties `fetch.min.bytes` and `fetch.max.wait.ms`. Similar to how batches are sent to the broker, consumers wait until a certain number of bytes worth of messages are available to fetch all at once, or until a certain timeout, in order to better utilize network and broker resources. As a result, latency can vary depending on topic activity, which may hamper attempts at using this metric for alerting.
+
+* We should avoid the _records-lag-max_ metric, which measures consumer lag _only_ for the single worst partition a consumer is working on. Spring provides an alternative, _kafka offset_, which measures the total number of unconsumed messages by topic and/or group.
+
+* The _records-consumed-rate_  measures the number of messages consumed per second by a client. Similarly, the _bytes-consumed-rate_ measure the total number of bytes consumed by a client.
+
+* The _fetch-rate_ metric measures the average number of fetch requests made by a consumer per second. The _fetch-size-avg_ measures the average number of bytes of those requests, and the _records-per-request-avg_ gives us the average number of messages per fetch. There _is not_ an equivalent to the producer record-size-average metric by default.
+
+=== Consumer Offsets
+
+In the event of broker failure or application disconnect, recovery falls back on Kafka consumer offsets, which we will summarize based on [<<Kafka>>, pp. 97-99] in this paragraph. Message consumers do not ACK each individual message like is typical for JMS. Instead, consumers have an _offset_ for each partition which tracks the index of the last retrieved message. Consumers periodically _commit_ their current offsets for their partitions to the broker, which saves them persistently. At any time, a consumer's offset may be behind or ahead of the offset of their last successfully _processed_ message, depending on the commit strategy. After a crash or rebalance (the assignment of partitions to consumers which happens as consumers connect and disconnect), consumers retrieve offsets for their partitions from the broker, then start consuming messages. If the last committed offset is _behind_ the most recently retrieved message for a partition (that is, a consumer received some messages but had not yet committed an updated offset prior to a crash), then the broker will re-deliver some messages (the already-delivered message will be delivered again). If the last committed offset was _ahead_ of their last retrieved message (that is, the consumer committed an offset before retrieving messages up to that offset, then crashed), then those messages will never be delivered.
+
+[#kafka-eos]
+=== Transactions, Exactly Once Semantics (EOS), and Idempotence
+
+Kafka supports _exactly once semantics_ (EOS) that ensure messages are produced and consumed exactly one time. To guarantee exactly-once, Kafka ensures producers are _idempotent_, and our applications will frequently use _transactions_ to guard against duplicate side effects. These three things are all different aspects of the same concept.
+
+An _idempotent_ producer is one that cannot produce a duplicate message as a result of retry (such as to recover from network or broker failures). When idempotent producers start, they retrieve a unique identifier from a Kafka broker. When an idempotent producer produces a message, it adds its unique id and the sequence number of the message. Combined with the topic and partition name, these uniquely identify the message. By default, the broker keeps track of the last 5 message IDs received per partition, and producers maintain no more than 5 in-flight requests. Together these allow brokers to reject all duplicate messages they might receive. For more information, such as how failover and disconnect scenarios are managed, see [<<Kafka>>, ch. 8].
+
+NOTE: EOS semantics prevent duplicate delivery caused by producer retry. They do not prevent our application from producing the same content multiple times. For this reason we should rely on the producer mechanism exclusively to manage retry. If our application can generate identical message contents (e.g. if two producers read data from the same data source at the same time), we will need to handle it ourselves.
+
+Stream processing may rely on transactions to guarantee EOS. Transactional processing uses transactions in the familiar way to ensure that a group of actions succeeds or fails atomically. While idempotent producers have a unique producer id which can change when producers restart, transactional producers maintain a consistent producer id that may be used to identify the same producer between restarts. When transactional producers produce messages, they are saved to a partition just like normal messages. By default, consumers read all messages, including uncommitted ones. Consumers may be configured instead to only read _committed_ messages. In this case they rely on the broker to track transaction boundaries within a partition, and in particular to track the position of the _last stable offset (LSO)_, the offset of the first still-open transaction in the partition. Consumers will _only_ consume messages from a partition up to the LSO. If any transaction is uncommitted, it prevents consumers from fetching any later messages, including non-transacted and committed messages, from the same partition. By default, transactions time out after 15 minutes.
+
+WARNING: Kafka _does not_ support XA transactions. In other words, if a message handler successfully commits a database record in a transaction but does not successfully commit a message to Kafka, the database transaction _will not roll back._ For a message producer, this may simply mean our application needs to re-generate the message contents. For a transform function in the middle of a pipeline, though, this may lead to re-delivered messages. We are therefore advised to make all our database operations _idempotent_. When Kafka re-delivers the message our transform failed to consume fully, an idempotent database operation will amount to a no-op if it succeeded the last time we received the message, and so there is no harm done. It is possible, however, that a message may be chronically unprocessable. We may need a way to remove the orphaned database entry (perhaps as a consequence of DLQ processing).
 
 == References
 

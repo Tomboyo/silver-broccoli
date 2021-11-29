@@ -4,6 +4,16 @@ spring:
     username: admin
     password: password
 
+management:
+  endpoints:
+    web:
+      exposure:
+        include: '*'
+  endpoint:
+    health:
+      # Optional, but informative.
+      show-details: always
+
 logging:
   level:
     root: ERROR
