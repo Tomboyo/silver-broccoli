@@ -1,4 +1,4 @@
-package com.github.tomboyo.silverbroccoli;
+package com.github.tomboyo.silverbroccoli.messaging;
 
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.slf4j.Logger;
@@ -15,9 +15,9 @@ public class BatchMessageLogger {
 
   @KafkaListener(
       id = "batchMessageLogger",
-      topics = {"input-high", "input-low", "output-left", "output-right"},
+      topics = {"output-left", "output-right"},
       batch = "true")
-  public void logBatch(List<ConsumerRecord<byte[], Input>> consumerRecords) {
+  public void logBatch(List<ConsumerRecord<Integer, Input>> consumerRecords) {
     consumerRecords.forEach(record -> LOGGER.info("{}", record));
   }
 }

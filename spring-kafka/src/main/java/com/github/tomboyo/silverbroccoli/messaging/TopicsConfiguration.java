@@ -1,4 +1,4 @@
-package com.github.tomboyo.silverbroccoli;
+package com.github.tomboyo.silverbroccoli.messaging;
 
 import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.common.config.TopicConfig;

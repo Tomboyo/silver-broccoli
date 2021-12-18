@@ -1,13 +1,5 @@
 spring:
   kafka:
-    # These properties are environment-specific. Set them in application-$PROFILE.yaml
-    # bootstrap-servers:
-    # properties:
-    #   sasl:
-    #     mechanism:
-    #     login.callback.handler.class:
-    #     jaas.config:
-    #   security.protocol:
     producer:
       # Enable kafka transactions application-wide.
       transaction-id-prefix: 'tx-'
@@ -17,4 +9,8 @@ spring:
       key-deserializer: org.apache.kafka.common.serialization.IntegerDeserializer
       value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
       properties:
-        spring.json.trusted.packages: java.util,java.lang,com.github.tomboyo.silverbroccoli
+        spring.json.trusted.packages: java.util,java.lang,com.github.tomboyo.silverbroccoli.*
+      # Only consume committed messages
+      isolation-level: read_committed
+      # Start from the beginning of the topic when joining for the first time
+      auto-offset-reset: earliest

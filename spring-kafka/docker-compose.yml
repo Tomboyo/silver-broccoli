@@ -1,0 +1,13 @@
+version: "2"
+
+services:
+  postgres:
+    image: postgres:13
+    ports:
+      - '5432:5432'
+    environment:
+      POSTGRES_DB: sb
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: password
+    volumes:
+      - ./docker-compose/pg-init.sql:/docker-entrypoint-initdb.d/pg-init.sql:ro,z

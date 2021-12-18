@@ -1,4 +1,4 @@
-package com.github.tomboyo.silverbroccoli;
+package com.github.tomboyo.silverbroccoli.messaging;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.kafka.core.KafkaTemplate;
@@ -14,20 +14,20 @@ import static java.util.concurrent.TimeUnit.SECONDS;
 public class InputEmitter {
 
   private final AtomicInteger counter = new AtomicInteger();
-  private final KafkaTemplate<byte[], Input> template;
+  private final KafkaTemplate<Integer, Input> template;
 
   @Autowired
-  public InputEmitter(KafkaTemplate<byte[], Input> template) {
+  public InputEmitter(KafkaTemplate<Integer, Input> template) {
     this.template = template;
   }
 
   // Generate messages like OK-3 or ERROR-5 to both input topics.
   @Scheduled(fixedRate = 1, timeUnit = SECONDS)
-  @Transactional
+  @Transactional(transactionManager = "kafkaTransactionManager")
   public void emit() {
     var count = counter.incrementAndGet();
     var topic = count % 2 == 0 ? "input-high" : "input-low";
     var message = (count % 5 == 0 ? "OK" : "ERROR") + "-" + count;
-    template.send(topic, new Input().setKey(count).setMessage(message));
+    template.send(topic, count, new Input().setMessage(message));
   }
 }
