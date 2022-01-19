@@ -22,12 +22,14 @@ public class InputEmitter {
   }
 
   // Generate messages like OK-3 or ERROR-5 to both input topics.
-  @Scheduled(fixedRate = 1, timeUnit = SECONDS)
-  @Transactional(transactionManager = "kafkaTransactionManager")
+  @Scheduled(fixedRate = 5, timeUnit = SECONDS)
+  @Transactional("kafkaTransactionManager")
   public void emit() {
-    var count = counter.incrementAndGet();
+    var count = counter.getAndIncrement();
+    // Alternate between the two topics
     var topic = count % 2 == 0 ? "input-high" : "input-low";
-    var message = (count % 5 == 0 ? "OK" : "ERROR") + "-" + count;
+    // Deliver 2 OK, then 2 ERROR
+    var message = (count % 4 == 0 || count % 4 == 1 ? "OK" : "ERROR") + "-" + count;
     template.send(topic, count, new Input().setMessage(message));
   }
 }
