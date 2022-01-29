@@ -1,11 +1,13 @@
 package com.github.tomboyo.silverbroccoli.messaging;
 
+import org.apache.kafka.clients.admin.Admin;
 import org.springframework.boot.autoconfigure.kafka.ConcurrentKafkaListenerContainerFactoryConfigurer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.kafka.annotation.EnableKafka;
 import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
 import org.springframework.kafka.core.ConsumerFactory;
+import org.springframework.kafka.core.KafkaAdmin;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.listener.DeadLetterPublishingRecoverer;
 import org.springframework.kafka.listener.DefaultAfterRollbackProcessor;
@@ -16,6 +18,11 @@ import org.springframework.util.backoff.FixedBackOff;
 @EnableScheduling
 @EnableKafka
 public class KafkaConfiguration {
+
+  @Bean
+  public Admin admin(KafkaAdmin kafkaAdmin) {
+    return Admin.create(kafkaAdmin.getConfigurationProperties());
+  }
 
   @Bean
   public ConcurrentKafkaListenerContainerFactory<?, ?> kafkaListenerContainerFactory(

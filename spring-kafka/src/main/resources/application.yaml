@@ -11,3 +11,10 @@ spring:
       transaction-id-prefix: 'tx-'
       key-serializer: 'org.apache.kafka.common.serialization.IntegerSerializer'
       value-serializer: 'org.springframework.kafka.support.serializer.JsonSerializer'
+management:
+  endpoints:
+    web:
+      exposure:
+        include: '*'
+server:
+  port: 8080
